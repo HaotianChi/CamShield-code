@@ -1,0 +1,7 @@
+flask
+requests
+cryptography
+imageio-ffmpeg
+charm-crypto-framework==0.62
+pydantic>=2,<3
+eval_type_backport

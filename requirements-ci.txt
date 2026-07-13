@@ -1,0 +1,7 @@
+# CI dependencies (MockCPABE path; Charm-Crypto not required).
+flask
+requests
+cryptography
+imageio-ffmpeg
+pydantic>=2,<3
+eval_type_backport

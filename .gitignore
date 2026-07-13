@@ -1,0 +1,92 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+env/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Logs and temp
+*.log
+tmp/
+
+# Credentials and local config
+*.pem
+*.key
+*.crt
+*.p12
+*.sqlite
+*.db
+.env
+.env.*
+config.local*
+secrets*
+
+# CamShield runtime state and local outputs
+web_runs/
+runs/
+logs/
+records/
+state/
+.camshield_cloud_state*
+.camshield_gateway_state*
+.camshield_camera_state*
+*.pkl
+*.pickle
+*.state
+*.state.*
+latest_search_response*.json
+current_search*.json
+evidence_package*.json
+*.bak*
+*bak*
+charm_src/
+
+# Media and archives (not part of the artifact)
+*.mp4
+*.h264
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.zip
+*.tar
+*.tar.gz
+*.gz
+
+# Local data directories at repo root
+/data/
+/outputs/
+/results/
+
+# Generated figures and documents elsewhere
+*.png
+*.pdf
