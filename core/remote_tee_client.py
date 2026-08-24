@@ -67,6 +67,10 @@ class RemoteTeeClient:
     def audit_log(self) -> CameraAuditLog:
         return self._audit_log
 
+    def state(self) -> dict:
+        """Return the persistent camera-chain resume state."""
+        return self._get_json("/state")
+
     def attest_segment(self, request: TeeAttestRequest) -> TeeAttestResponse:
         obj = {
             "cid": request.cid,

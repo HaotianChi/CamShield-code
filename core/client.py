@@ -92,8 +92,8 @@ class Client:
         """
         Obtain epoch-specific query tokens.
 
-        Default: derive offline from IdxCap_u in Cap_u (leased mode).
-        Fallback: request tokens from Gateway (/search-tokens on-demand mode).
+        Preferred method: derive offline from IdxCap_u in Cap_u (leased mode).
+        Alternative method: request tokens from Gateway on demand.
         """
         if self.cap_u and self.cap_u.get("IdxCap_u"):
             from core.idx_cap_u import search_tokens_from_cap_u
@@ -227,6 +227,12 @@ class Client:
             return False, msg
 
         root_hex = str(signed["root_hex"])
+        checkpoint_version = (
+            int(signed["version"])
+            if signed.get("type") == "camshield-ordered-checkpoint-v2"
+            or signed.get("leaf_format") == "ordered-token-leaf-v2"
+            else None
+        )
         query_tokens = list(response.query_token_ids_hex)
         if not query_tokens:
             return False, "missing query token ids for ordered proof verification"
@@ -245,6 +251,7 @@ class Client:
                     token_hex=token_hex,
                     posting_record_ids=posting,
                     proof=proof,
+                    checkpoint_version=checkpoint_version,
                 )
                 if not ok:
                     return False, msg
@@ -256,6 +263,7 @@ class Client:
                     root_hex=root_hex,
                     token_hex=token_hex,
                     proof=proof,
+                    checkpoint_version=checkpoint_version,
                 )
                 if not ok:
                     return False, msg

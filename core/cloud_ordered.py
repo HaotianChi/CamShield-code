@@ -32,10 +32,11 @@ def ordered_checkpoint_signed_bytes(
     timestamp: int,
     root_hex: str,
     chain_hex: str,
+    checkpoint_type: str = "camshield-ordered-checkpoint-v1",
 ) -> bytes:
     return canonical_json_bytes(
         {
-            "type": "camshield-ordered-checkpoint-v1",
+            "type": checkpoint_type,
             "epoch": epoch,
             "version": version,
             "timestamp": timestamp,
@@ -74,7 +75,10 @@ def build_signed_ordered_checkpoint(
     prev_chain: bytes,
     timestamp: int | None = None,
 ) -> tuple[dict[str, Any], OrderedMerkleSnapshot]:
-    snapshot = build_ordered_merkle_snapshot(token_to_record_ids)
+    snapshot = build_ordered_merkle_snapshot(
+        token_to_record_ids,
+        checkpoint_version=version,
+    )
     ts = int(time.time()) if timestamp is None else int(timestamp)
     root_hex = snapshot.root_hex
     chain_value = compute_checkpoint_chain_value(
@@ -91,10 +95,12 @@ def build_signed_ordered_checkpoint(
         timestamp=ts,
         root_hex=root_hex,
         chain_hex=chain_hex,
+        checkpoint_type="camshield-ordered-checkpoint-v2",
     )
     signature = sign(gateway.skG, signed_bytes)
     signed_checkpoint = {
-        "type": "camshield-ordered-checkpoint-v1",
+        "type": "camshield-ordered-checkpoint-v2",
+        "leaf_format": "ordered-token-leaf-v2",
         "epoch": int(epoch),
         "version": int(version),
         "timestamp": ts,
@@ -178,6 +184,7 @@ def verify_ordered_checkpoint_signature(cp: dict[str, Any]) -> tuple[bool, str]:
             timestamp=int(cp["timestamp"]),
             root_hex=str(cp["root_hex"]),
             chain_hex=str(cp["chain_hex"]),
+            checkpoint_type=str(cp.get("type", "camshield-ordered-checkpoint-v1")),
         ))
         return True, "ok"
     except Exception as exc:
@@ -212,6 +219,7 @@ def verify_ordered_membership_proof(
     token_hex: str,
     posting_record_ids: list[str],
     proof: dict[str, Any],
+    checkpoint_version: int | None = None,
 ) -> tuple[bool, str]:
     from core.ordered_merkle import verify_membership_proof
 
@@ -220,6 +228,7 @@ def verify_ordered_membership_proof(
         token_id=token_hex,
         posting_record_ids=posting_record_ids,
         proof=MembershipProof.from_dict(proof),
+        checkpoint_version=checkpoint_version,
     )
 
 
@@ -228,6 +237,7 @@ def verify_ordered_non_membership_proof(
     root_hex: str,
     token_hex: str,
     proof: dict[str, Any],
+    checkpoint_version: int | None = None,
 ) -> tuple[bool, str]:
     from core.ordered_merkle import verify_non_membership_proof
 
@@ -235,4 +245,5 @@ def verify_ordered_non_membership_proof(
         root_hex=root_hex,
         query_token_id=token_hex,
         proof=NonMembershipProof.from_dict(proof),
+        checkpoint_version=checkpoint_version,
     )

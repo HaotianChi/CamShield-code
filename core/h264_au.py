@@ -22,7 +22,7 @@ This is a focused parser for CamShield segmenting, not a full H.264 stack.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 
@@ -99,7 +99,7 @@ class AnnexBNALUStream:
     It returns complete NALUs and keeps the last incomplete NALU in the buffer.
     """
 
-    buffer: bytearray = bytearray()
+    buffer: bytearray = field(default_factory=bytearray)
 
     def feed(self, data: bytes) -> list[bytes]:
         if not data:

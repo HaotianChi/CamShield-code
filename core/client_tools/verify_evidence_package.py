@@ -34,7 +34,17 @@ def posting_digest_hex(record_ids: list[str]) -> str:
     return sha256_hex(canonical_json_bytes(normalized))
 
 
-def leaf_hash_hex(leaf: dict[str, str]) -> str:
+def leaf_hash_hex(leaf: dict[str, Any]) -> str:
+    if leaf.get("checkpoint_version") is not None and leaf.get("previous_token_id") is not None:
+        obj = {
+            "type": "ordered-token-leaf-v2",
+            "token_id": leaf["token_id"],
+            "posting_digest_hex": leaf["posting_digest_hex"],
+            "checkpoint_version": int(leaf["checkpoint_version"]),
+            "previous_token_id": leaf["previous_token_id"],
+            "next_token_id": leaf["next_token_id"],
+        }
+        return sha256_hex(canonical_json_bytes(obj))
     obj = {
         "type": "ordered-token-leaf-v1",
         "token_id": leaf["token_id"],
@@ -70,7 +80,13 @@ def verify_merkle_path(root_hex: str, leaf: dict[str, str], merkle_path: list[di
     return cur == root_hex
 
 
-def verify_membership_proof(root_hex: str, token_hex: str, posting_record_ids: list[str], proof: dict[str, Any]):
+def verify_membership_proof(
+    root_hex: str,
+    token_hex: str,
+    posting_record_ids: list[str],
+    proof: dict[str, Any],
+    checkpoint_version: int | None = None,
+):
     token_id = make_real_token_id(token_hex)
 
     if proof.get("token_id") != token_id:
@@ -79,6 +95,12 @@ def verify_membership_proof(root_hex: str, token_hex: str, posting_record_ids: l
     leaf = proof.get("leaf", {})
     if leaf.get("token_id") != token_id:
         return False, "membership leaf token_id mismatch"
+
+    if checkpoint_version is not None:
+        if leaf.get("checkpoint_version") != int(checkpoint_version):
+            return False, "membership checkpoint version mismatch"
+        if leaf.get("previous_token_id") is None:
+            return False, "membership proof uses legacy leaf format"
 
     expected_digest = posting_digest_hex(posting_record_ids)
     if leaf.get("posting_digest_hex") != expected_digest:
@@ -90,7 +112,12 @@ def verify_membership_proof(root_hex: str, token_hex: str, posting_record_ids: l
     return True, "ok"
 
 
-def verify_non_membership_proof(root_hex: str, token_hex: str, proof: dict[str, Any]):
+def verify_non_membership_proof(
+    root_hex: str,
+    token_hex: str,
+    proof: dict[str, Any],
+    checkpoint_version: int | None = None,
+):
     query_token_id = make_real_token_id(token_hex)
 
     if proof.get("query_token_id") != query_token_id:
@@ -111,6 +138,15 @@ def verify_non_membership_proof(root_hex: str, token_hex: str, proof: dict[str, 
     if pred.get("next_token_id") != succ_id:
         return False, "predecessor and successor are not adjacent"
 
+    if checkpoint_version is not None:
+        if (
+            pred.get("checkpoint_version") != int(checkpoint_version)
+            or succ.get("checkpoint_version") != int(checkpoint_version)
+        ):
+            return False, "non-membership checkpoint version mismatch"
+        if succ.get("previous_token_id") != pred_id:
+            return False, "successor does not point back to predecessor"
+
     pred_ok = verify_merkle_path(root_hex, pred, proof.get("predecessor_path", []))
     if not pred_ok:
         return False, "predecessor Merkle path invalid"
@@ -118,14 +154,15 @@ def verify_non_membership_proof(root_hex: str, token_hex: str, proof: dict[str, 
     succ_ok = verify_merkle_path(root_hex, succ, proof.get("successor_path", []))
     if succ_ok:
         return True, "ok"
-
+    if checkpoint_version is not None:
+        return False, "successor Merkle path invalid"
     return True, "ok with predecessor path + committed next pointer; successor path uses duplicate-node proof shape"
 
 
 def checkpoint_signed_bytes(cp: dict[str, Any]) -> bytes:
     return canonical_json_bytes(
         {
-            "type": "camshield-ordered-checkpoint-v1",
+            "type": cp.get("type", "camshield-ordered-checkpoint-v1"),
             "epoch": cp["epoch"],
             "version": cp["version"],
             "timestamp": cp["timestamp"],
@@ -195,6 +232,12 @@ def verify_retrieval_from_package(pkg: dict[str, Any]):
 
     root_hex = search_response["checkpoint_root_hex"]
     signed_checkpoint = search_response["signed_checkpoint"]
+    checkpoint_version = (
+        int(signed_checkpoint["version"])
+        if signed_checkpoint.get("type") == "camshield-ordered-checkpoint-v2"
+        or signed_checkpoint.get("leaf_format") == "ordered-token-leaf-v2"
+        else None
+    )
     query_token_ids = search_response.get("query_token_ids", [])
     postings = search_response.get("postings", {})
     membership_proofs = search_response.get("membership_proofs", {})
@@ -227,14 +270,25 @@ def verify_retrieval_from_package(pkg: dict[str, Any]):
             if not proof:
                 checks.append((f"membership proof for {token_hex[:16]}...", False, "missing membership proof"))
             else:
-                ok, msg = verify_membership_proof(root_hex, token_hex, posting, proof)
+                ok, msg = verify_membership_proof(
+                    root_hex,
+                    token_hex,
+                    posting,
+                    proof,
+                    checkpoint_version,
+                )
                 checks.append((f"membership proof for {token_hex[:16]}...", ok, msg))
         else:
             proof = non_membership_proofs.get(token_hex)
             if not proof:
                 checks.append((f"non-membership proof for {token_hex[:16]}...", False, "missing non-membership proof"))
             else:
-                ok, msg = verify_non_membership_proof(root_hex, token_hex, proof)
+                ok, msg = verify_non_membership_proof(
+                    root_hex,
+                    token_hex,
+                    proof,
+                    checkpoint_version,
+                )
                 checks.append((f"non-membership proof for {token_hex[:16]}...", ok, msg))
 
     rs_ok, rs_msg = verify_result_set(operator, query_token_ids, postings, result_record_ids)

@@ -4,6 +4,7 @@ CamShield Gateway: ingest, encrypt, index, and issue client credentials.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -104,6 +105,7 @@ class Gateway:
         msk: Any | None = None,
         epoch_manager: EpochManager | None = None,
         camera_registry: GatewayCameraRegistry | None = None,
+        include_record_locator_tags: bool = True,
     ):
         self.gateway_id = gateway_id
 
@@ -115,7 +117,13 @@ class Gateway:
 
         self.epoch_manager = epoch_manager or EpochManager()
         self.camera_registry = camera_registry or GatewayCameraRegistry()
+        # Tags(mu_i, config, alarms, labels) is configurable in the protocol.
+        # Record locators remain signed metadata even when they are not also
+        # exposed as encrypted-search tags.
+        self.include_record_locator_tags = bool(include_record_locator_tags)
         self.client_caps: dict[str, dict] = {}
+        self._epoch_capsule_cache: dict[tuple[int, str, bytes], bytes] = {}
+        self.last_process_phase_ms: dict[str, float | bool] = {}
 
                                                                            
                                
@@ -231,6 +239,24 @@ class Gateway:
                 pass
 
         raise RuntimeError("ABE backend does not support encrypt()")
+
+    def _epoch_capsule(self, *, epoch: int, policy: str, EKe: bytes) -> tuple[bytes, bool]:
+        """Return the protocol-level capsule κa,e, reusing it within an epoch."""
+        cache_key = (int(epoch), str(policy), sha256(EKe))
+        cached = self._epoch_capsule_cache.get(cache_key)
+        if cached is not None:
+            return cached, True
+
+        capsule = self._abe_encrypt_epoch_key(policy=policy, EKe=EKe)
+        self._epoch_capsule_cache[cache_key] = capsule
+
+        # Epoch rotation invalidates old cache entries. Keep one previous epoch
+        # for in-flight work without allowing this implementation cache to grow.
+        minimum_epoch = int(epoch) - 1
+        for key in list(self._epoch_capsule_cache):
+            if key[0] < minimum_epoch:
+                self._epoch_capsule_cache.pop(key, None)
+        return capsule, False
 
                                                                         
                        
@@ -419,6 +445,7 @@ class Gateway:
         scope: str | None = None,
         access_class: str = "RAW",
         live: bool = False,
+        auto_rotate_epoch: bool = True,
     ) -> EncryptedEvidenceRecord:
         """
         Main Gateway entry point.
@@ -432,13 +459,18 @@ class Gateway:
 
         One video segment produces one encrypted evidence record.
         """
-        self.maybe_rotate_epoch()
+        total_started = time.perf_counter()
+        if auto_rotate_epoch:
+            self.maybe_rotate_epoch()
 
         if scope is None:
             scope = segment.cid
 
+        verify_started = time.perf_counter()
         self._verify_camera_input(segment)
+        verify_ms = (time.perf_counter() - verify_started) * 1000.0
 
+        build_started = time.perf_counter()
         record = self._build_encrypted_record(
             segment=segment,
             extra_keywords=extra_keywords,
@@ -449,6 +481,7 @@ class Gateway:
             access_class=access_class,
             live=live,
         )
+        build_ms = (time.perf_counter() - build_started) * 1000.0
 
                                                                               
         self.camera_registry.update_after_verified_segment(
@@ -456,6 +489,14 @@ class Gateway:
             seq=segment.seq,
             gamma=segment.gamma,
         )
+
+        detail = dict(self.last_process_phase_ms)
+        detail.update({
+            "camera_origin_verify_ms": verify_ms,
+            "record_build_total_ms": build_ms,
+            "gateway_process_total_ms": (time.perf_counter() - total_started) * 1000.0,
+        })
+        self.last_process_phase_ms = detail
 
         return record
 
@@ -507,6 +548,8 @@ class Gateway:
         Archival path produces ERa,i with index digest qi and binding ba,i.
         Live fast path produces LERa,i with empty qi and binding blive.
         """
+        phase_started = time.perf_counter()
+        phase_ms: dict[str, float | bool] = {}
         e = self.epoch_manager.current_epoch()
 
                                        
@@ -528,11 +571,13 @@ class Gateway:
         )
 
                                   
+        aes_started = time.perf_counter()
         gcm = aes_gcm.encrypt(
             key=ki,
             plaintext=segment.raw_payload,
             associated_data=aad,
         )
+        phase_ms["aes_gcm_ms"] = (time.perf_counter() - aes_started) * 1000.0
 
                                                            
         policy = build_abe_policy(
@@ -543,7 +588,14 @@ class Gateway:
         )
 
                                           
-        kappa = self._abe_encrypt_epoch_key(policy=policy, EKe=EKe)
+        abe_started = time.perf_counter()
+        kappa, capsule_cache_hit = self._epoch_capsule(
+            epoch=e,
+            policy=policy,
+            EKe=EKe,
+        )
+        phase_ms["abe_capsule_ms"] = (time.perf_counter() - abe_started) * 1000.0
+        phase_ms["abe_capsule_cache_hit"] = capsule_cache_hit
 
         if live:
             index_tokens: list[bytes] = []
@@ -555,11 +607,16 @@ class Gateway:
                 sid=segment.sid,
                 seq=segment.seq,
                 extra_keywords=extra_keywords,
+                include_record_locators=self.include_record_locator_tags,
             )
+            index_started = time.perf_counter()
             index_tokens = hmac_index.make_index_tokens(
                 kidx_e, keywords, camera_id=segment.cid
             )
             qi = hmac_index.index_digest(index_tokens)
+            phase_ms["index_token_digest_ms"] = (
+                time.perf_counter() - index_started
+            ) * 1000.0
 
                        
         policy_digest = sha256(policy.encode("utf-8"))
@@ -594,12 +651,20 @@ class Gateway:
             gateway_signature=b"",
         )
 
+        binding_started = time.perf_counter()
         if live:
             record.binding_hash = record.compute_live_binding_hash()
         else:
             record.binding_hash = record.compute_binding_hash()
 
         record.gateway_signature = sign(self.skG, record.binding_hash)
+        phase_ms["record_binding_sign_ms"] = (
+            time.perf_counter() - binding_started
+        ) * 1000.0
+        phase_ms["encrypted_record_internal_total_ms"] = (
+            time.perf_counter() - phase_started
+        ) * 1000.0
+        self.last_process_phase_ms = phase_ms
 
         return record
 

@@ -101,6 +101,9 @@ class FFmpegH264LiveSensor:
     For Raspberry Pi USB camera:
         device="/dev/video0", testsrc=False
 
+    For macOS USB camera:
+        input_format="avfoundation", device="1:none"
+
     For VM live simulation:
         testsrc=True
     """
@@ -110,7 +113,9 @@ class FFmpegH264LiveSensor:
     size: str = "640x360"
     aus_per_segment: int = default_aus_per_segment()
     ffmpeg_bin: str = "ffmpeg"
+    bitrate: str = "500k"
     testsrc: bool = False
+    input_format: str = "v4l2"
 
     def __post_init__(self) -> None:
         self._proc: Optional[subprocess.Popen] = None
@@ -126,6 +131,13 @@ class FFmpegH264LiveSensor:
                 "-re",
                 "-f", "lavfi",
                 "-i", f"testsrc=size={self.size}:rate={self.fps}",
+            ]
+        elif self.input_format == "avfoundation":
+            input_args = [
+                "-f", "avfoundation",
+                "-framerate", str(self.fps),
+                "-video_size", self.size,
+                "-i", self.device,
             ]
         else:
             input_args = [
@@ -146,6 +158,9 @@ class FFmpegH264LiveSensor:
             "-tune", "zerolatency",
             "-profile:v", "baseline",
             "-x264-params", x264_params,
+            "-b:v", self.bitrate,
+            "-maxrate", self.bitrate,
+            "-bufsize", self.bitrate,
             "-pix_fmt", "yuv420p",
             "-f", "h264",
             "-",

@@ -213,4 +213,13 @@ class Cloud:
         self.latest_versions[epoch] = int(version)
         from core.ordered_merkle import build_ordered_merkle_snapshot
 
-        self.snapshot = build_ordered_merkle_snapshot(self.token_to_record_ids)
+        checkpoint_version = (
+            int(signed["version"])
+            if signed.get("type") == "camshield-ordered-checkpoint-v2"
+            or signed.get("leaf_format") == "ordered-token-leaf-v2"
+            else None
+        )
+        self.snapshot = build_ordered_merkle_snapshot(
+            self.token_to_record_ids,
+            checkpoint_version=checkpoint_version,
+        )

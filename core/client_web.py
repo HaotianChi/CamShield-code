@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hmac
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +20,7 @@ from flask import Flask, jsonify, request, send_from_directory
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = Path(__file__).resolve().parent / "client_tools"
 RUNS_DIR = PROJECT_ROOT / "web_runs"
+LIVE_DIR = Path(os.environ.get("CAMSHIELD_LIVE_DIR", "/run/camshield/live"))
 
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:8000"
 DEFAULT_CLOUD_URL = "http://127.0.0.1:8100"
@@ -55,11 +59,20 @@ class HttpResult:
 
 def request_json(method: str, url: str, *, payload: dict[str, Any] | None = None, timeout: int = 15) -> HttpResult:
     t0 = time.perf_counter()
+    headers: dict[str, str] = {}
+    api_token = os.environ.get("CAMSHIELD_API_TOKEN", "").strip()
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     try:
         if method.upper() == "GET":
-            r = requests.get(url, timeout=timeout)
+            r = requests.get(url, timeout=timeout, headers=headers)
         else:
-            r = requests.post(url, json=payload or {}, timeout=timeout)
+            r = requests.post(
+                url,
+                json=payload or {},
+                timeout=timeout,
+                headers=headers,
+            )
         latency_ms = (time.perf_counter() - t0) * 1000.0
         try:
             data = r.json()
@@ -107,14 +120,14 @@ def walk_epoch(x: Any) -> int | None:
     return None
 
 
-def get_current_epoch(gateway_url: str, fallback: int = 239) -> int:
+def get_current_epoch(gateway_url: str, default: int = 239) -> int:
     for path in ["/admin/revocation/state", "/admin/status"]:
         res = request_json("GET", gateway_url.rstrip("/") + path, timeout=5)
         if res.status == 200 and res.data:
             ans = walk_epoch(res.data)
             if ans is not None:
                 return ans
-    return fallback
+    return default
 
 
 CAP_CACHE_DIR = RUNS_DIR / ".cap_u_cache"
@@ -206,8 +219,8 @@ def derive_search_tokens(
     keywords: list[str],
 ) -> tuple[list[str], dict[str, Any], str]:
     """
-    Default: derive query_token_ids offline from IdxCap_u in Cap_u.
-    Fallback: POST /search-tokens when IdxCap_u is missing or epoch out of lease.
+    Prefer offline derivation from IdxCap_u in Cap_u. Request tokens from the
+    Gateway when IdxCap_u is unavailable or its epoch lease has expired.
     """
     offline_err = "Cap_u missing IdxCap_u"
     if cap_u and cap_u.get("IdxCap_u"):
@@ -305,10 +318,17 @@ def status_probe(name: str, url: str, paths: list[str], timeout: int = 5, option
 
 def run_cmd(args: list[str], timeout: int = 180) -> dict[str, Any]:
     t0 = time.perf_counter()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        str(PROJECT_ROOT)
+        + os.pathsep
+        + env.get("PYTHONPATH", "")
+    )
     try:
         proc = subprocess.run(
             args,
             cwd=PROJECT_ROOT,
+            env=env,
             text=True,
             capture_output=True,
             timeout=timeout,
@@ -355,6 +375,12 @@ def verify_retrieval_response(search_data: dict[str, Any], query_token_ids: list
 
     root_hex = search_data.get("checkpoint_root_hex")
     signed_checkpoint = search_data.get("signed_checkpoint") or {}
+    checkpoint_version = (
+        int(signed_checkpoint["version"])
+        if signed_checkpoint.get("type") == "camshield-ordered-checkpoint-v2"
+        or signed_checkpoint.get("leaf_format") == "ordered-token-leaf-v2"
+        else None
+    )
     if not root_hex:
         root_hex = signed_checkpoint.get("root_hex")
 
@@ -397,6 +423,7 @@ def verify_retrieval_response(search_data: dict[str, Any], query_token_ids: list
                     token_hex=tok,
                     posting_record_ids=posting,
                     proof=proof,
+                    checkpoint_version=checkpoint_version,
                 )
             except Exception as exc:
                 ok, msg = False, repr(exc)
@@ -411,6 +438,7 @@ def verify_retrieval_response(search_data: dict[str, Any], query_token_ids: list
                     root_hex=root_hex,
                     token_hex=tok,
                     proof=proof,
+                    checkpoint_version=checkpoint_version,
                 )
             except Exception as exc:
                 ok, msg = False, repr(exc)
@@ -564,6 +592,20 @@ def run_record_verification_pipeline(
         result["camera_output"] = result["decrypt_output"]
         result["playback_report"] = result["decrypt_output"]
         return
+
+    trust = request_json(
+        "GET",
+        gateway_url.rstrip("/") + "/bootstrap/trust",
+        timeout=15,
+    )
+    if trust.status == 200 and trust.data.get("gateway_public_key_b64"):
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        payload["gateway_public_key_b64"] = trust.data["gateway_public_key_b64"]
+        payload["camera_public_keys"] = trust.data.get("camera_public_keys", {})
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     decrypt_script = TOOLS_DIR / "client_charm_local_decrypt.py"
     if decrypt_script.exists():
@@ -822,6 +864,7 @@ def render_page(defaults: dict[str, Any], result: dict[str, Any] | None, statuse
     playback_limit = defaults.get("playback_limit", "10")
     live_timeout = defaults.get("live_timeout", "30")
     package_path = defaults.get("package_path", "")
+    replay_minutes = defaults.get("replay_minutes", "10")
 
     body = f"""
 <!doctype html>
@@ -868,6 +911,82 @@ def render_page(defaults: dict[str, Any], result: dict[str, Any] | None, statuse
 
   {render_status_card(statuses)}
 
+  <div class="card playback-card">
+    <h2>Continuous Secure Near-Live</h2>
+    <video id="near-live-video" controls autoplay muted playsinline></video>
+    <div class="small">Verified and decrypted on the Raspberry Pi. The plaintext HLS window is volatile and limited to about one minute.</div>
+    <pre id="near-live-status">Loading live bridge status...</pre>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+    <script>
+      const liveVideo = document.getElementById('near-live-video');
+      const livePlaylist = '/live-hls/index.m3u8?v=' + Date.now();
+      let livePlaybackStarted = false;
+
+      function moveToLiveEdge(force) {{
+        if (liveVideo.seekable && liveVideo.seekable.length > 0) {{
+          const range = liveVideo.seekable.length - 1;
+          const start = liveVideo.seekable.start(range);
+          const end = liveVideo.seekable.end(range);
+          if (force || end - liveVideo.currentTime > 6) {{
+            liveVideo.currentTime = Math.max(start, end - 1);
+          }}
+        }}
+      }}
+
+      function startLivePlayback() {{
+        moveToLiveEdge(true);
+        const promise = liveVideo.play();
+        if (promise) {{
+          promise.then(() => {{ livePlaybackStarted = true; }}).catch(() => {{}});
+        }}
+      }}
+
+      if (liveVideo.canPlayType('application/vnd.apple.mpegurl')) {{
+        liveVideo.src = livePlaylist;
+        liveVideo.addEventListener('loadedmetadata', startLivePlayback);
+        liveVideo.addEventListener('canplay', startLivePlayback);
+      }} else if (window.Hls && Hls.isSupported()) {{
+        const hls = new Hls({{
+          lowLatencyMode: true,
+          liveSyncDurationCount: 1,
+          liveMaxLatencyDurationCount: 3,
+          maxLiveSyncPlaybackRate: 2,
+          maxBufferLength: 8,
+          backBufferLength: 0
+        }});
+        hls.loadSource(livePlaylist);
+        hls.attachMedia(liveVideo);
+        hls.on(Hls.Events.MANIFEST_PARSED, startLivePlayback);
+        hls.on(Hls.Events.LEVEL_UPDATED, () => moveToLiveEdge(false));
+        hls.on(Hls.Events.ERROR, (_, data) => {{
+          if (!data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {{
+            hls.startLoad();
+          }} else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {{
+            hls.recoverMediaError();
+          }}
+        }});
+      }}
+
+      setInterval(() => {{
+        if (livePlaybackStarted) moveToLiveEdge(false);
+      }}, 2000);
+
+      document.addEventListener('visibilitychange', () => {{
+        if (!document.hidden) startLivePlayback();
+      }});
+
+      function refreshLiveStatus() {{
+        fetch('/live-hls/status.json?t=' + Date.now(), {{cache: 'no-store'}})
+          .then(r => r.json())
+          .then(x => document.getElementById('near-live-status').textContent = JSON.stringify(x, null, 2))
+          .catch(e => document.getElementById('near-live-status').textContent = String(e));
+      }}
+      refreshLiveStatus();
+      setInterval(refreshLiveStatus, 2000);
+    </script>
+  </div>
+
   <div class="card">
     <h2>Token-based Retrieval</h2>
     <p class="small">Gateway search tokens → Cloud encrypted search → retrieval proof verification → record fetch → decrypt, binding, camera-origin checks, and archival replay playback.</p>
@@ -893,8 +1012,24 @@ def render_page(defaults: dict[str, Any], result: dict[str, Any] | None, statuse
   </div>
 
   <div class="card">
+    <h2>Direct Replay</h2>
+    <p class="small">Locate archival records by time range, then verify record binding, camera origin and segment continuity. This path does not request retrieval tokens, posting lists, Merkle proofs or checkpoints.</p>
+    <form method="post" action="/direct-replay">
+      <div class="grid">
+        <div><label>Gateway URL</label><input name="gateway_url" value="{esc(gateway_url)}"></div>
+        <div><label>Cloud URL</label><input name="cloud_url" value="{esc(cloud_url)}"></div>
+        <div><label>client_id</label><input name="client_id" value="{esc(client_id)}"></div>
+        <div><label>camera_id</label><input name="camera_id" value="{esc(camera_id)}"></div>
+        <div><label>recent minutes</label><input name="replay_minutes" value="{esc(replay_minutes)}"></div>
+        <div><label>maximum segments</label><input name="playback_limit" value="{esc(playback_limit)}"></div>
+      </div>
+      <button type="submit">Run Direct Replay + Verify</button>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>Live Access</h2>
-    <p class="small">Client requests live via Cloud; Cloud notifies Gateway; both sides enable live fast path. Gateway ingests LER records without index tags.</p>
+    <p class="small">The local Client creates the Cloud session and then enables the local Gateway fast path. Cloud does not call back into the Raspberry Pi LAN. Gateway ingests LER records without index tags.</p>
     <form method="post" action="/live-access">
       <div class="grid">
         <div><label>Gateway URL</label><input name="gateway_url" value="{esc(gateway_url)}"></div>
@@ -962,6 +1097,12 @@ def render_page(defaults: dict[str, Any], result: dict[str, Any] | None, statuse
             body += pill(bool(result.get("evidence_retrieval_ok")), "Package Retrieval Proof")
             body += pill(bool(result.get("evidence_binding_ok")), "Package Record Binding")
             body += pill(bool(result.get("evidence_camera_ok")), "Package Camera-Origin")
+        elif mode == "direct-replay":
+            body += pill(bool(result.get("fetch_ok")), "Direct Record Fetch")
+            body += pill(bool(result.get("decrypt_ok")), "Client CP-ABE/AES Decrypt")
+            body += pill(bool(result.get("binding_ok")), "Record Binding")
+            body += pill(bool(result.get("camera_ok")), "Camera-Origin + Continuity")
+            body += pill(bool(result.get("playback_ok")), "Replay Playback")
         else:
             body += pill(bool(result.get("token_ok")), "Gateway Token")
             body += pill(bool(result.get("search_ok")), "Cloud Search")
@@ -1203,7 +1344,7 @@ def export_playback_video(
                 capture_output=True,
                 timeout=180,
             )
-            ffmpeg_output = (proc.stdout or "") + (proc.stderr or "") + "\n\n--- fallback ---\n\n" + (proc2.stdout or "") + (proc2.stderr or "")
+            ffmpeg_output = (proc.stdout or "") + (proc.stderr or "") + "\n\n--- retry ---\n\n" + (proc2.stdout or "") + (proc2.stderr or "")
             ffmpeg_cmd = cmd2
             ffmpeg_returncode = proc2.returncode
         else:
@@ -1246,6 +1387,34 @@ def export_playback_video(
 def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_url: str, default_tee_url: str) -> Flask:
     app = Flask(__name__)
 
+    @app.before_request
+    def require_display_pin():
+        expected = os.environ.get("CAMSHIELD_DISPLAY_PIN", "")
+        if not expected:
+            return None
+        if request.remote_addr in {"127.0.0.1", "::1"}:
+            return None
+        supplied = request.headers.get("Authorization", "")
+        try:
+            scheme, encoded = supplied.split(" ", 1)
+            if scheme.lower() != "basic":
+                raise ValueError
+            _, password = base64.b64decode(encoded).decode("utf-8").split(":", 1)
+        except Exception:
+            password = ""
+        if not hmac.compare_digest(password, expected):
+            response = jsonify({"ok": False, "error": "display PIN required"})
+            response.status_code = 401
+            response.headers["WWW-Authenticate"] = 'Basic realm="CamShield Display PIN"'
+            return response
+        return None
+
+    @app.get("/live-hls/<path:filename>")
+    def serve_live_hls(filename: str):
+        response = send_from_directory(LIVE_DIR, filename)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     @app.get("/web_runs/<run_id>/<path:filename>")
     def serve_web_run_file(run_id: str, filename: str):
         return send_from_directory(RUNS_DIR / safe_name(run_id), filename)
@@ -1258,13 +1427,112 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         tee_url = request.args.get("tee_url", default_tee_url).rstrip("/")
         return jsonify({"ok": True, "statuses": build_statuses(gateway_url, cloud_url, camera_url, tee_url)})
 
+    @app.post("/api/tag-search-range")
+    def api_tag_search_range():
+        obj = request.get_json(force=True, silent=True) or {}
+        gateway_url = str(obj.get("gateway_url", default_gateway_url)).rstrip("/")
+        cloud_url = str(obj.get("cloud_url", default_cloud_url)).rstrip("/")
+        client_id = str(obj.get("client_id", "owner"))
+        camera_id = str(obj.get("camera_id", "cam01"))
+        keywords = obj.get("keywords", ["event:motion"])
+        if isinstance(keywords, str):
+            keywords = split_items(keywords)
+        keywords = [str(item) for item in keywords]
+        operator = str(obj.get("operator", "AND")).upper()
+        try:
+            start_ts = int(obj["start"])
+            end_ts = int(obj["end"])
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "error": "start and end Unix timestamps are required",
+            }), 400
+
+        epoch_result = request_json("GET", cloud_url + "/epochs", timeout=20)
+        if epoch_result.status != 200:
+            return jsonify({
+                "ok": False,
+                "error": "failed to list Cloud epochs",
+                "cloud_response": epoch_result.data,
+            }), 502
+        epochs = [
+            int(item["epoch"])
+            for item in epoch_result.data.get("epochs", [])
+            if int(item["end_ts"]) >= start_ts
+            and int(item["start_ts"]) <= end_ts
+        ]
+        cap_u, cap_source, setup_data = load_or_fetch_cap_u(
+            gateway_url,
+            client_id,
+            camera_id,
+        )
+        reports: list[dict[str, Any]] = []
+        merged_rids: list[str] = []
+        for epoch in sorted(epochs):
+            tokens, token_data, token_mode = derive_search_tokens(
+                cap_u=cap_u,
+                gateway_url=gateway_url,
+                client_id=client_id,
+                camera_id=camera_id,
+                epoch=epoch,
+                keywords=keywords,
+            )
+            if not tokens:
+                reports.append({
+                    "epoch": epoch,
+                    "ok": False,
+                    "stage": "token",
+                    "token_data": token_data,
+                })
+                continue
+            search_result = request_json(
+                "POST",
+                cloud_url + "/search",
+                payload={
+                    "epoch": epoch,
+                    "query_token_ids": tokens,
+                    "operator": operator,
+                },
+                timeout=30,
+            )
+            proof = verify_retrieval_response(
+                search_result.data,
+                tokens,
+                operator,
+                epoch,
+            )
+            if proof.get("ok"):
+                merged_rids.extend(proof.get("result_record_ids", []))
+            reports.append({
+                "epoch": epoch,
+                "ok": bool(proof.get("ok")),
+                "token_mode": token_mode,
+                "proof": proof,
+            })
+
+        unique_rids = list(dict.fromkeys(merged_rids))
+        fetched, fetch_report = fetch_records(cloud_url, unique_rids, limit=0)
+        return jsonify({
+            "ok": bool(epochs) and all(item["ok"] for item in reports),
+            "mode": "tag-search-range",
+            "start": start_ts,
+            "end": end_ts,
+            "epochs": epochs,
+            "credential_source": cap_source,
+            "credential_setup": setup_data,
+            "epoch_reports": reports,
+            "result_record_ids": unique_rids,
+            "fetched_records": fetched,
+            "fetch_report": fetch_report,
+        })
+
     @app.get("/")
     def index():
         gateway_url = default_gateway_url.rstrip("/")
         cloud_url = default_cloud_url.rstrip("/")
         camera_url = default_camera_url.rstrip("/")
         tee_url = default_tee_url.rstrip("/")
-        epoch = get_current_epoch(gateway_url, fallback=239)
+        epoch = get_current_epoch(gateway_url, default=239)
         defaults = {
             "gateway_url": gateway_url,
             "cloud_url": cloud_url,
@@ -1279,9 +1547,146 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
             "decrypt_limit": "3",
             "playback_limit": "10",
             "live_timeout": "30",
+            "replay_minutes": "10",
             "package_path": "",
         }
         return render_page(defaults, None, build_statuses(gateway_url, cloud_url, camera_url, tee_url))
+
+    @app.post("/direct-replay")
+    def direct_replay():
+        gateway_url = request.form.get("gateway_url", default_gateway_url).strip().rstrip("/")
+        cloud_url = request.form.get("cloud_url", default_cloud_url).strip().rstrip("/")
+        camera_url = request.form.get("camera_url", default_camera_url).strip().rstrip("/")
+        tee_url = request.form.get("tee_url", default_tee_url).strip().rstrip("/")
+        client_id = request.form.get("client_id", "owner").strip() or "owner"
+        camera_id = request.form.get("camera_id", "cam01").strip() or "cam01"
+        try:
+            replay_minutes = max(1, int(request.form.get("replay_minutes", "10")))
+        except Exception:
+            replay_minutes = 10
+        try:
+            playback_limit = max(1, int(request.form.get("playback_limit", "10")))
+        except Exception:
+            playback_limit = 10
+
+        end_ts = int(time.time())
+        start_ts = end_ts - replay_minutes * 60
+        epoch = get_current_epoch(gateway_url, default=1)
+        run_id = (
+            time.strftime("%Y%m%d_%H%M%S")
+            + "_direct_replay_"
+            + safe_name(client_id)
+            + "_"
+            + safe_name(camera_id)
+        )
+        run_dir = RUNS_DIR / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        defaults = {
+            "gateway_url": gateway_url,
+            "cloud_url": cloud_url,
+            "camera_url": camera_url,
+            "tee_url": tee_url,
+            "client_id": client_id,
+            "camera_id": camera_id,
+            "keywords_text": "",
+            "epoch": str(epoch),
+            "operator": "AND",
+            "fetch_limit": "0",
+            "decrypt_limit": str(playback_limit),
+            "playback_limit": str(playback_limit),
+            "live_timeout": "30",
+            "replay_minutes": str(replay_minutes),
+            "package_path": "",
+        }
+        result: dict[str, Any] = {
+            "workflow_mode": "direct-replay",
+            "run_dir": str(run_dir),
+            "gateway_url": gateway_url,
+            "cloud_url": cloud_url,
+            "client_id": client_id,
+            "camera_id": camera_id,
+            "epoch": epoch,
+            "fetch_ok": False,
+            "decrypt_ok": False,
+            "binding_ok": False,
+            "camera_ok": False,
+            "playback_ok": False,
+            "overall_ok": False,
+        }
+        range_url = (
+            cloud_url
+            + "/records/range?camera_id="
+            + requests.utils.quote(camera_id)
+            + f"&start={start_ts}&end={end_ts}&limit={playback_limit}"
+        )
+        range_res = request_json("GET", range_url, timeout=30)
+        range_data = range_res.data or {"ok": False, "error": range_res.error}
+        records = range_data.get("records", []) if range_res.status == 200 else []
+        fetched_records = [
+            {
+                "rid": item.get("rid"),
+                "http_status": 200,
+                "ok": True,
+                "response": {"ok": True, "record": item.get("record")},
+                "record": item.get("record"),
+            }
+            for item in records
+            if isinstance(item, dict) and isinstance(item.get("record"), dict)
+        ]
+        result["range_data"] = range_data
+        result["result_count"] = len(fetched_records)
+        result["fetched_count"] = len(fetched_records)
+        result["fetch_ok"] = bool(fetched_records)
+        json_path = run_dir / "fetched_records.json"
+        json_path.write_text(
+            json.dumps(
+                {
+                    "client_id": client_id,
+                    "camera_id": camera_id,
+                    "mode": "direct-replay",
+                    "start": start_ts,
+                    "end": end_ts,
+                    "retrieval_proof_required": False,
+                    "fetched_records": fetched_records,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        result["json_path"] = str(json_path)
+        if result["fetch_ok"]:
+            first_epoch = int(fetched_records[0]["record"].get("epoch", epoch))
+            result["epoch"] = first_epoch
+            run_record_verification_pipeline(
+                result,
+                json_path=json_path,
+                run_dir=run_dir,
+                gateway_url=gateway_url,
+                client_id=client_id,
+                camera_id=camera_id,
+                epoch=first_epoch,
+                decrypt_limit=playback_limit,
+                playback_limit=playback_limit,
+            )
+        else:
+            result["error"] = range_data.get("error") or "no archival records in requested time range"
+        result["overall_ok"] = bool(
+            result["fetch_ok"]
+            and result["decrypt_ok"]
+            and result["binding_ok"]
+            and result["camera_ok"]
+            and result["playback_ok"]
+        )
+        (run_dir / "web_result_summary.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        return render_page(
+            defaults,
+            result,
+            build_statuses(gateway_url, cloud_url, camera_url, tee_url),
+        )
 
     @app.post("/verify")
     def verify():
@@ -1291,7 +1696,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         tee_url = request.form.get("tee_url", default_tee_url).strip().rstrip("/")
         client_id = request.form.get("client_id", "owner").strip() or "owner"
         camera_id = request.form.get("camera_id", "cam01").strip() or "cam01"
-        keywords_text = request.form.get("keywords_text", "event:fig6ret_single")
+        keywords_text = request.form.get("keywords_text", "event:default")
         keywords = split_items(keywords_text)
         operator = request.form.get("operator", "AND").strip().upper()
         epoch_text = request.form.get("epoch", "").strip()
@@ -1299,7 +1704,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         try:
             epoch = int(epoch_text)
         except Exception:
-            epoch = get_current_epoch(gateway_url, fallback=239)
+            epoch = get_current_epoch(gateway_url, default=239)
             epoch_text = str(epoch)
 
         try:
@@ -1503,7 +1908,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         try:
             epoch = int(epoch_text)
         except Exception:
-            epoch = get_current_epoch(gateway_url, fallback=1)
+            epoch = get_current_epoch(gateway_url, default=1)
             epoch_text = str(epoch)
 
         try:
@@ -1560,29 +1965,71 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
             "error": "",
         }
 
+        cap_u, cap_source, credential_data = load_or_fetch_cap_u(
+            gateway_url,
+            client_id,
+            camera_id,
+            run_dir=run_dir,
+        )
+        result["credential_data"] = credential_data
+        result["credential_source"] = cap_source
+        if not cap_u:
+            result["error"] = "owner credential setup failed before live start"
+            return render_page(
+                defaults,
+                result,
+                build_statuses(gateway_url, cloud_url, camera_url, tee_url),
+            )
+
         live_start_res = post_json_retry(
             cloud_url + "/live/start",
             {
                 "client_id": client_id,
                 "camera_id": camera_id,
                 "epoch": epoch,
-                "gateway_url": gateway_url,
+                "client_coordinated": True,
             },
             timeout=30,
             attempts=3,
         )
         live_start_data = live_start_res.data or {"ok": False, "error": live_start_res.error}
         result["live_start_data"] = live_start_data
-        result["live_start_ok"] = bool(
-            live_start_res.status == 200
-            and live_start_data.get("ok")
-            and live_start_data.get("fast_path_ready")
-        )
-
         session_id = str(live_start_data.get("session_id", ""))
-        if not result["live_start_ok"] or not session_id:
+        if live_start_res.status != 200 or not live_start_data.get("ok") or not session_id:
             result["error"] = live_start_data.get("error") or "live start failed"
             return render_page(defaults, result, build_statuses(gateway_url, cloud_url, camera_url, tee_url))
+
+        gateway_live_res = post_json_retry(
+            gateway_url + "/live/fast-path/start",
+            {
+                "session_id": session_id,
+                "client_id": client_id,
+                "camera_id": camera_id,
+                "epoch": epoch,
+                "cloud_url": cloud_url,
+                "mode": "live-fast-path",
+                "fast_path_ready": True,
+            },
+            timeout=30,
+            attempts=3,
+        )
+        result["gateway_live_start_data"] = gateway_live_res.data
+        result["live_start_ok"] = bool(
+            gateway_live_res.status == 200
+            and gateway_live_res.data.get("ok")
+            and gateway_live_res.data.get("fast_path_ready")
+        )
+        if not result["live_start_ok"]:
+            result["error"] = (
+                gateway_live_res.data.get("error")
+                or gateway_live_res.error
+                or "local gateway live fast path start failed"
+            )
+            return render_page(
+                defaults,
+                result,
+                build_statuses(gateway_url, cloud_url, camera_url, tee_url),
+            )
 
         latest_res = poll_live_latest(cloud_url, session_id, timeout_s=live_timeout)
         live_latest_data = latest_res.data or {"ok": False, "error": latest_res.error}
@@ -1660,7 +2107,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
             "client_id": "owner",
             "camera_id": "cam01",
             "keywords_text": "",
-            "epoch": str(get_current_epoch(gateway_url, fallback=1)),
+            "epoch": str(get_current_epoch(gateway_url, default=1)),
             "operator": "AND",
             "fetch_limit": "10",
             "decrypt_limit": "3",
@@ -1743,7 +2190,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         try:
             epoch = int(request.form.get("epoch", "1"))
         except Exception:
-            epoch = get_current_epoch(gateway_url, fallback=1)
+            epoch = get_current_epoch(gateway_url, default=1)
 
         defaults = {
             "gateway_url": gateway_url,

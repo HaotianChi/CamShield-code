@@ -74,12 +74,12 @@ def keyword_set_for_record(
     sid: str,
     seq: int,
     extra_keywords: Iterable[str] | None = None,
+    *,
+    include_record_locators: bool = True,
 ) -> list[str]:
-    keywords = [
-        f"camera:{cid}",
-        f"segment:{sid}",
-        f"seq:{seq}",
-    ]
+    keywords = [f"camera:{cid}"]
+    if include_record_locators:
+        keywords.extend((f"segment:{sid}", f"seq:{seq}"))
     if extra_keywords:
         keywords.extend(extra_keywords)
     return [normalize_keyword(k) for k in keywords]
@@ -91,12 +91,15 @@ def tokens_for_record(
     sid: str,
     seq: int,
     extra_keywords: Iterable[str] | None = None,
+    *,
+    include_record_locators: bool = True,
 ) -> list[bytes]:
     keywords = keyword_set_for_record(
         cid=cid,
         sid=sid,
         seq=seq,
         extra_keywords=extra_keywords,
+        include_record_locators=include_record_locators,
     )
     return make_index_tokens(kidx_e, keywords, camera_id=cid)
 

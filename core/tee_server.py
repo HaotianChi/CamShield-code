@@ -13,21 +13,86 @@ Camera node calls this server over localhost HTTP.
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import os
 import resource
+import sys
+import threading
 import time
 import traceback
+from pathlib import Path
 
 from flask import Flask, jsonify, request
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from core.camera import LocalTeeModule, TeeAttestRequest
 from core.wire import b64e, b64d
 
 
-def create_app(camera_id: str) -> Flask:
+DEFAULT_TEE_STATE_PATH = Path(
+    os.environ.get("CAMSHIELD_TEE_STATE", ".camshield_tee_state.json")
+)
+
+
+def _private_key_raw(key: Ed25519PrivateKey) -> bytes:
+    return key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def _save_tee_state(tee: LocalTeeModule, path: Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "type": "camshield-tee-state-v1",
+        "camera_id": tee._camera_id,
+        "private_key_b64": base64.b64encode(_private_key_raw(tee._sk)).decode("ascii"),
+        "gamma_prev_hex": tee.gamma_prev.hex(),
+        "next_seq": tee.next_seq,
+        "updated_at": int(time.time()),
+    }
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def _load_or_create_tee(camera_id: str, path: Path) -> LocalTeeModule:
+    path = Path(path)
+    if not path.exists():
+        tee = LocalTeeModule(camera_id)
+        _save_tee_state(tee, path)
+        return tee
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    stored_camera = str(data.get("camera_id", camera_id))
+    if stored_camera != camera_id:
+        raise RuntimeError(
+            f"TEE state camera mismatch: state={stored_camera}, requested={camera_id}"
+        )
+    raw = base64.b64decode(data["private_key_b64"])
+    return LocalTeeModule(
+        camera_id,
+        signing_key=Ed25519PrivateKey.from_private_bytes(raw),
+        gamma_prev=bytes.fromhex(data.get("gamma_prev_hex", "00" * 32)),
+        next_seq=int(data.get("next_seq", 1)),
+    )
+
+
+def create_app(camera_id: str, state_path: Path | None = None) -> Flask:
     app = Flask(__name__)
 
-    tee = LocalTeeModule(camera_id)
+    resolved_state_path = Path(state_path or DEFAULT_TEE_STATE_PATH)
+    tee = _load_or_create_tee(camera_id, resolved_state_path)
+    state_lock = threading.Lock()
 
     metrics = {
         "attest_count": 0,
@@ -41,11 +106,26 @@ def create_app(camera_id: str) -> Flask:
     def health():
         return jsonify(
             {
-                "ok": True,
-                "camera_id": camera_id,
-                "pid": os.getpid(),
-            }
-        )
+                    "ok": True,
+                    "camera_id": camera_id,
+                    "pid": os.getpid(),
+                    "next_seq": tee.next_seq,
+                    "state_path": str(resolved_state_path),
+                }
+            )
+
+    @app.get("/state")
+    def state():
+        with state_lock:
+            return jsonify(
+                {
+                    "ok": True,
+                    "camera_id": camera_id,
+                    "public_key_b64": b64e(tee.public_key_bytes),
+                    "gamma_prev_hex": tee.gamma_prev.hex(),
+                    "next_seq": tee.next_seq,
+                }
+            )
 
     @app.get("/public-key")
     def public_key():
@@ -77,7 +157,10 @@ def create_app(camera_id: str) -> Flask:
                 }
             ), 400
 
-        tee._gamma_prev = b"\x00" * 32
+        with state_lock:
+            tee._gamma_prev = b"\x00" * 32
+            tee._next_seq = 1
+            _save_tee_state(tee, resolved_state_path)
 
                                                                               
         metrics["attest_count"] = 0
@@ -118,7 +201,9 @@ def create_app(camera_id: str) -> Flask:
             )
 
             t0 = time.perf_counter()
-            resp = tee.attest_segment(req)
+            with state_lock:
+                resp = tee.attest_segment(req)
+                _save_tee_state(tee, resolved_state_path)
             t1 = time.perf_counter()
 
             elapsed_ms = (t1 - t0) * 1000.0
@@ -183,13 +268,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-id", default="cam01")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument(
+        "--state-path",
+        default=str(DEFAULT_TEE_STATE_PATH),
+        help="Persistent camera signing key and hash-chain state",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    app = create_app(args.camera_id)
+    app = create_app(args.camera_id, Path(args.state_path))
 
     print("[TEE] Software-isolated TEE server")
     print(f"[TEE] camera_id={args.camera_id}")

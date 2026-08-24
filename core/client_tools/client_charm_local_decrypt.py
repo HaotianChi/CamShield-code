@@ -5,6 +5,7 @@ from base64 import b64decode
 import hashlib
 import hmac
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -59,10 +60,14 @@ def build_associated_data(
 
 def post_json(url: str, payload: dict, timeout: int = 30) -> dict:
     data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    api_token = os.environ.get("CAMSHIELD_API_TOKEN", "").strip()
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
 

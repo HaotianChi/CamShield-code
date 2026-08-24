@@ -215,16 +215,28 @@ class LocalTeeModule:
     """
     Local software TEE simulator.
 
-    Deployment mapping:
-    - In Plan 2A, this logic can run on MP157 as an isolated signing service.
-    - In Plan 2B, this logic should be moved into an OP-TEE Trusted Application.
+    Deployment options:
+    - Run this logic on MP157 as an isolated signing service.
+    - Move this logic into an OP-TEE Trusted Application.
     - skC and γ state must not be exposed to Raspberry Pi / Gateway / Cloud.
     """
 
-    def __init__(self, camera_id: str):
+    def __init__(
+        self,
+        camera_id: str,
+        *,
+        signing_key=None,
+        gamma_prev: bytes | None = None,
+        next_seq: int = 1,
+    ):
         self._camera_id = camera_id
-        self._sk, self._pk = generate_keypair()
-        self._gamma_prev = b"\x00" * 32
+        if signing_key is None:
+            self._sk, self._pk = generate_keypair()
+        else:
+            self._sk = signing_key
+            self._pk = signing_key.public_key()
+        self._gamma_prev = gamma_prev if gamma_prev is not None else b"\x00" * 32
+        self._next_seq = max(1, int(next_seq))
         self._audit_log = CameraAuditLog(camera_id=camera_id)
 
     @property
@@ -239,9 +251,21 @@ class LocalTeeModule:
     def audit_log(self) -> CameraAuditLog:
         return self._audit_log
 
+    @property
+    def gamma_prev(self) -> bytes:
+        return self._gamma_prev
+
+    @property
+    def next_seq(self) -> int:
+        return self._next_seq
+
     def attest_segment(self, request: TeeAttestRequest) -> TeeAttestResponse:
         if request.cid != self._camera_id:
             raise ValueError("TEE camera_id mismatch")
+        if int(request.seq) != self._next_seq:
+            raise ValueError(
+                f"TEE sequence mismatch: expected={self._next_seq}, got={request.seq}"
+            )
 
                     
         hi = payload_hash(request.raw_payload)
@@ -261,6 +285,7 @@ class LocalTeeModule:
 
         gamma_prev = self._gamma_prev
         self._gamma_prev = gamma
+        self._next_seq += 1
 
         self._audit_log.entries.append(
             CameraAuditEntry(

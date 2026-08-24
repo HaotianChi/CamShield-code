@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from core.abe import get_cpabe
 from core.camera import CameraMain
@@ -200,6 +201,17 @@ def run_deployment_role(args: argparse.Namespace) -> None:
     if args.role == "tee":
         from core.tee_server import main as tee_main
 
+        parsed_tee_url = urlparse(args.tee_url)
+        tee_port = parsed_tee_url.port or 9000
+        sys.argv = [
+            sys.argv[0],
+            "--camera-id",
+            args.camera_id,
+            "--host",
+            args.host,
+            "--port",
+            str(tee_port),
+        ]
         tee_main()
         return
 
