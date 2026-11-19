@@ -70,7 +70,7 @@ evidence_package*.json
 *bak*
 charm_src/
 
-# Media and archives (not part of the artifact)
+# Media and archives
 *.mp4
 *.h264
 *.avi
@@ -87,7 +87,7 @@ charm_src/
 /outputs/
 /results/
 
-# Generated figures and documents elsewhere
+# Local figures (keep CamShield.pdf if present)
 *.png
 *.pdf
-!CamShield_Bridging privacy protection and evidence readiness in cloud-assisted surveillance.pdf
+!CamShield.pdf

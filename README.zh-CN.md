@@ -80,4 +80,20 @@ python demo/list_attacks.py
 
 ## CI
 
-推送到 `main` 或对其发起 PR 时，GitHub Actions 会执行编译检查与 smoke 测试（`python run.py --no-charm`）。CI 使用 `requirements-ci.txt`（不含 Charm-Crypto）。
+推送到 `main` 或对其发起 PR 时，GitHub Actions 会执行编译检查与基础测试（`python run.py --no-charm`）。CI 使用 `requirements-ci.txt`（不含 Charm-Crypto）。
+
+## 引用
+
+若本工作对您有所帮助，欢迎引用：
+
+```bibtex
+@article{Chi2027CamShield,
+  title   = {CamShield: Bridging privacy protection and evidence readiness in cloud-assisted surveillance},
+  author  = {Chi, Haotian and Li, Yunwei and Zhao, Chunli and Geng, Haijun and Zhang, Rong and Wang, Yuwei},
+  journal = {Computer Standards \& Interfaces},
+  volume  = {100},
+  pages   = {104211},
+  year    = {2027},
+  doi     = {10.1016/j.csi.2026.104211}
+}
+```

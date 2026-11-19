@@ -67,20 +67,13 @@ class Client:
 
     @classmethod
     def create(cls, gateway: Any, abe: CPABEBase) -> "Client":
-        """
-        Create a client through Gateway bootstrap.
-
-        Your Gateway should implement:
-            issue_client_bootstrap(role_name, attributes) -> (ClientTrustMaterial, abe_sk)
-
-        This replaces the old Authority-based bootstrap.
-        """
+        """Create a client through Gateway.issue_client_bootstrap()."""
         trust, abe_sk = gateway.issue_client_bootstrap(cls.role_name, cls.attributes)
         return cls(abe_sk=abe_sk, abe=abe, trust=trust)
 
-                                                                        
-                           
-                                                                        
+
+
+
 
     def request_search_tokens(
         self,
@@ -138,9 +131,9 @@ class Client:
         )
         return cloud.search(request)
 
-                                                                        
-                                  
-                                                                        
+
+
+
 
     def verify_search_response(self, response: SearchResponse) -> tuple[bool, str]:
         result = self.verify_search_response_detailed(response)
@@ -336,8 +329,8 @@ class Client:
         if response.epoch != cp.epoch:
             return False, "Search response epoch does not match checkpoint epoch"
 
-                                                                                   
-                                                                            
+
+
         if len(response.postings) != response.query_token_count:
             return False, "Cloud misbehavior detected: incomplete posting lists"
 
@@ -401,9 +394,9 @@ class Client:
 
         return True, "ok"
 
-                                                                        
-                         
-                                                                        
+
+
+
 
     def verify_segment_descriptor(self, segment: CameraSignedSegment) -> tuple[bool, str]:
         """
@@ -506,9 +499,9 @@ class Client:
 
         return rec, "ok"
 
-                                                                        
-                
-                                                                        
+
+
+
 
     def decrypt_record(self, record: EncryptedEvidenceRecord) -> tuple[bytes | None, str]:
         """
@@ -555,9 +548,9 @@ class Client:
 
         return plaintext, "ok"
 
-                                                                        
-                      
-                                                                        
+
+
+
 
     def build_evidence_package(
         self,

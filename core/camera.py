@@ -11,10 +11,8 @@ where:
     σi  = Sign_skC(γi)
     SSi = (μi, hi, γi-1, γi, σi)
 
-Important:
-- The camera-side TEE signs only the camera-origin descriptor.
-- It does NOT sign event_tags, object_tags, location, or granularity.
-- Search tags are Gateway-side inputs used later for encrypted retrieval.
+The camera-side TEE signs only the camera-origin descriptor.
+Search tags are supplied later by the Gateway for encrypted retrieval.
 """
 
 from __future__ import annotations
@@ -36,9 +34,9 @@ from core.models import (
 )
 
 
-                                                                             
-                                  
-                                                                             
+
+
+
 
 @dataclass(frozen=True)
 class SensorCaptureRequest:
@@ -129,9 +127,9 @@ class CameraAuditLog:
     entries: list[CameraAuditEntry] = field(default_factory=list)
 
 
-                                                                             
-            
-                                                                             
+
+
+
 
 @runtime_checkable
 class SensorInterface(Protocol):
@@ -165,24 +163,13 @@ class MainInterface(Protocol):
         timestamp: int | None = None,
         raw_payload: bytes | None = None,
         sid: str | None = None,
-        **legacy_kwargs,
+        **kwargs,
     ) -> CameraSignedSegment:
         ...
 
 
-                                                                             
-                 
-                                                                             
-
 class SimulatedSensor:
-    """
-    Simulated camera sensor.
-
-    Later replacement:
-    - USB camera
-    - RTSP camera
-    - V4L2 / ffmpeg segmenter
-    """
+    """In-process sensor that synthesizes segment payloads for simulation."""
 
     def capture_segment(self, request: SensorCaptureRequest) -> SensorSegmentData:
         sid = request.sid or f"{request.camera_id}_seg_{request.seq:06d}"
@@ -267,10 +254,10 @@ class LocalTeeModule:
                 f"TEE sequence mismatch: expected={self._next_seq}, got={request.seq}"
             )
 
-                    
+
         hi = payload_hash(request.raw_payload)
 
-                                  
+
         gamma = camera_chain_hash(
             cid=request.cid,
             sid=request.sid,
@@ -280,7 +267,7 @@ class LocalTeeModule:
             gamma_prev=self._gamma_prev,
         )
 
-                           
+
         sigma_c = sign(self._sk, gamma)
 
         gamma_prev = self._gamma_prev
@@ -351,7 +338,7 @@ class CameraMain:
         timestamp: int | None = None,
         raw_payload: bytes | None = None,
         sid: str | None = None,
-        **legacy_kwargs,
+        **kwargs,
     ) -> CameraSignedSegment:
         """
         Produce:
@@ -363,18 +350,14 @@ class CameraMain:
         - raw_payload: caller-supplied segment payload
         - sid: optional segment id
 
-        Additional keyword arguments are accepted for API compatibility and
-        ignored by camera-side signing.
+        Extra keyword arguments are accepted and ignored by camera-side signing.
         """
 
-                                                   
-                                                                                 
         if timestamp is None:
-            timestamp = legacy_kwargs.get("timestamp_start")
+            timestamp = kwargs.get("timestamp_start")
         if timestamp is None:
             timestamp = int(time.time())
 
-                        
         sensor_req = SensorCaptureRequest(
             camera_id=self.camera_id,
             seq=seq_no,
@@ -384,7 +367,7 @@ class CameraMain:
         )
         segment_data = self.sensor.capture_segment(sensor_req)
 
-                     
+
         attest_req = TeeAttestRequest(
             cid=segment_data.cid,
             sid=segment_data.sid,
@@ -394,7 +377,7 @@ class CameraMain:
         )
         attest = self.tee.attest_segment(attest_req)                            
 
-                                                  
+
         return CameraSignedSegment(
             cid=segment_data.cid,
             sid=segment_data.sid,

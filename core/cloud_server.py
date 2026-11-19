@@ -54,19 +54,19 @@ class CloudState:
         )
         self.records = SQLiteRecordMapping(self.store)
 
-                                     
-                                                          
+
+
         self.token_to_record_ids: dict[str, list[str]] = {}
         self.posting_membership_by_token: dict[str, set[str]] = {}
         self.posting_digest_by_token: dict[str, str] = {}
         self.loaded_posting_epoch: int | None = None
 
-                                                       
-                          
-                                                                   
+
+
+
         self.latest_checkpoint: dict[str, Any] | None = None
 
-                                                                            
+
         self.snapshot = None
 
         # `store_batches` counts HTTP transport requests.  The protocol-level
@@ -75,10 +75,10 @@ class CloudState:
         self.store_batches = 0
         self.store_payloads = 0
 
-                                        
-                                              
-                                                                             
-                                                                       
+
+
+
+
         self.live_sessions = self.store.load_live_sessions()
 
         # camera_id -> latest session_id while live fast path is active on Cloud
@@ -122,7 +122,7 @@ def create_app() -> Flask:
             "CAMSHIELD_CLOUD_ROOT_VERIFY_MODE must be deferred or synchronous"
         )
 
-                                                
+
     app.config["CAMSHIELD_CLOUD_STATE"] = state
     app.config["CAMSHIELD_CLOUD_ROOT_VERIFY_MODE"] = root_verify_mode
 
@@ -487,7 +487,7 @@ def create_app() -> Flask:
 
     @app.post("/store-batch")
     def store_batch():
-        """Store one original protocol payload (legacy-compatible endpoint)."""
+        """Store one protocol payload."""
         obj = request.get_json(force=True)
         if not isinstance(obj, dict):
             return jsonify({"ok": False, "error": "JSON object required"}), 400
@@ -804,7 +804,7 @@ def create_app() -> Flask:
                 raw_query_token = str(raw_query_token)
                 token_id = make_real_token_id(raw_query_token)
 
-                                                                      
+
                 raw_token_hex = raw_query_token[2:] if raw_query_token.startswith("1:") else raw_query_token
 
                 if token_id in snapshot.leaves and raw_token_hex in token_to_record_ids:
@@ -850,17 +850,17 @@ def create_app() -> Flask:
                 }
             )
 
-                                                                        
-                                    
-                            
-     
-                   
-                                             
-                               
-                                                         
-                                                                            
-                                                             
-                                                                        
+
+
+
+
+
+
+
+
+
+
+
 
     def _post_json_stdlib(url: str, payload: dict, timeout: int = 10) -> tuple[int, dict]:
         data = json.dumps(payload).encode("utf-8")
@@ -995,15 +995,15 @@ def create_app() -> Flask:
         })
 
 
-                                     
-                                                 
-     
-                                                                               
-                                                                         
-     
-                                
-                                                                           
-                                          
+
+
+
+
+
+
+
+
+
 
     def _deep_find_values(obj: Any, names: set[str], depth: int = 0):
         if depth > 8:
@@ -1066,7 +1066,7 @@ def create_app() -> Flask:
                 except Exception:
                     pass
 
-                                       
+
             digits = ""
             for ch in reversed(sid):
                 if ch.isdigit():

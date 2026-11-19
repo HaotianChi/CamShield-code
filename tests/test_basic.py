@@ -1,4 +1,4 @@
-"""Smoke tests for CI."""
+"""Basic tests for CI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from core.epoch import EpochManager, epoch_window_start
 from run import run_simulation
 
 
-class SmokeTests(unittest.TestCase):
+class BasicTests(unittest.TestCase):
     def test_epoch_hour_boundary(self) -> None:
         ts = int(datetime(2026, 7, 1, 13, 45, 30).timestamp())
         em = EpochManager(epoch_duration_s=3600, epoch_started_at=ts)

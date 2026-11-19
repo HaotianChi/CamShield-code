@@ -28,5 +28,5 @@ jobs:
       - name: Compile check
         run: python -m compileall -q core roles run.py tests
 
-      - name: Smoke tests
+      - name: Run tests
         run: python -m unittest discover -s tests -v

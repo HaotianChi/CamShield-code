@@ -1,27 +1,14 @@
 """
 Charm-Crypto CP-ABE backend for CamShield.
 
-This file provides a real CP-ABE backend using Charm-Crypto.
-
-It implements the same interface as MockCPABE in core/abe.py:
-
+Interface:
     setup() -> (mpk, msk)
     keygen(msk, attributes) -> sk
     encrypt(mpk, policy, EKe) -> kappa
     decrypt(sk, kappa) -> EKe or None
 
-CP-ABE mapping:
-    kappa_{a,e} = ABE.Enc(PK_ABE, EK_e, policy_{a,e})
-    EK_e        = ABE.Dec(PK_ABE, SK_u, kappa_{a,e})
-
-Important:
-- ABE protects the epoch key EK_e.
-- AES-GCM still encrypts the actual video payload.
-
-Charm note:
-- Charm policy parser treats underscores specially.
-- Therefore internal Charm attribute tokens must avoid underscores.
-- External CamShield attributes such as ROLE_OWNER are normalized to ROLEOWNER.
+ABE encapsulates the epoch key EKe; AES-GCM encrypts the video payload.
+Charm attribute tokens avoid underscores (e.g. ROLE_OWNER -> ROLEOWNER).
 """
 
 from __future__ import annotations
@@ -95,8 +82,8 @@ class CharmBSW07:
         if ct is None:
             raise ValueError(f"Charm encryption failed. Normalized policy: {normalized_policy}")
 
-                                                          
-                                                                                      
+
+
         return objectToBytes(ct, self.group)
 
     def decrypt(self, sk: Any, ciphertext: bytes) -> bytes | None:

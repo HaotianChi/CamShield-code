@@ -19,9 +19,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-                                                                             
-                                  
-                                                                             
+
+
+
 
 def sha256(data: bytes) -> bytes:
     return hashlib.sha256(data).digest()
@@ -123,12 +123,10 @@ def compute_posting_digest(record_ids: list[bytes]) -> bytes:
 
 def checkpoint_leaf_data(token: bytes, posting_digest: bytes, version: int) -> bytes:
     """
-    Leaf data for Merkle checkpoint:
+    Leaf payload for Merkle checkpoint:
         leafτ = (τ, λτ^v, v)
 
-    Note:
-    core/merkle.py hashes each leaf internally, so this function returns the
-    raw leaf payload, not H(leaf).
+    Returns the raw leaf payload; hashing is performed by core/merkle.py.
     """
     return b"".join(
         [
@@ -140,9 +138,9 @@ def checkpoint_leaf_data(token: bytes, posting_digest: bytes, version: int) -> b
     )
 
 
-                                                                             
-                     
-                                                                             
+
+
+
 
 class SegmentDescriptor(BaseModel):
     """
@@ -214,9 +212,9 @@ class CameraSignedSegment(BaseModel):
         )
 
 
-                                                                             
-                                   
-                                                                             
+
+
+
 
 class EncryptedEvidenceRecord(BaseModel):
     """
@@ -246,37 +244,37 @@ class EncryptedEvidenceRecord(BaseModel):
     rid: bytes
     SSi: SegmentDescriptor
 
-                                                               
+
     a: str
 
-              
+
     epoch: int
 
-                            
+
     nonce: bytes
     ciphertext: bytes
     tag: bytes
 
-                                                     
+
     kappa: bytes
     policy: str
 
-                    
+
     policy_digest: bytes
 
-                    
+
     capsule_digest: bytes
 
-                   
+
     index_tokens: list[bytes] = Field(default_factory=list)
 
-                        
+
     index_digest: bytes
 
-          
+
     binding_hash: bytes
 
-                           
+
     gateway_signature: bytes
 
     model_config = {"arbitrary_types_allowed": True}
@@ -375,9 +373,9 @@ class EncryptedEvidenceRecord(BaseModel):
         return self.compute_binding_hash()
 
 
-                                                                             
-                           
-                                                                             
+
+
+
 
 class MerkleProofData(BaseModel):
     leaf_index: int
@@ -447,9 +445,9 @@ class IndexCheckpoint(BaseModel):
         )
 
 
-                                                                             
-                         
-                                                                             
+
+
+
 
 class SearchRequest(BaseModel):
     query_tokens: list[bytes]
@@ -500,17 +498,12 @@ class SearchResponse(BaseModel):
         return None
 
 
-                                                                             
-                                      
-                                                                             
+
+
+
 
 class ClientTrustMaterial(BaseModel):
-    """
-    Client trust anchors.
-
-    No Authority exists in this protocol.
-    The client only needs camera and gateway public keys plus freshness floors.
-    """
+    """Client trust anchors: camera and gateway public keys plus freshness floors."""
 
     role_name: str
     camera_public_key_bytes: bytes
@@ -558,9 +551,9 @@ class SearchVerifyResult(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-                                                                             
-                  
-                                                                             
+
+
+
 
 class EvidencePackage(BaseModel):
     """
@@ -583,15 +576,15 @@ class EvidencePackage(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-                                                                             
-                                       
-                                                                             
-                                               
-             
-                    
-                  
-                     
-                          
- 
-                                                                             
-                       
+
+
+
+
+
+
+
+
+
+
+
+

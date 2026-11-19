@@ -125,23 +125,13 @@ def verify_non_membership_proof(
     """
     Verify ordered non-membership proof.
 
-    Strict design:
+    Checks:
         pred.token_id < query_token_id < succ.token_id
         pred.next_token_id == succ.token_id
-        pred path valid
-        succ path valid
+        predecessor Merkle path is valid
 
-    Checkpoint proof note:
-        Some checkpoints were generated with a duplicated-last-node successor
-        path. In that case, predecessor membership plus the committed
-        next_token_id still proves the open interval in which the query token
-        is absent.
-
-    Therefore:
-        - pred path is required.
-        - adjacency through pred.next_token_id is required.
-        - succ path is checked and reported, but a duplicate-node successor proof
-          shape does not fail the proof if pred path + adjacency are valid.
+    The successor path is checked and reported; adjacency via next_token_id
+    is sufficient for the open interval.
     """
     query_token_id = make_real_token_id(token_hex)
 

@@ -1,4 +1,4 @@
-                        
+
 """
 Ordered Merkle tree for CamShield searchable-index checkpoints.
 
@@ -115,13 +115,7 @@ def posting_digest_hex(record_ids: list[str]) -> str:
 
 
 def posting_digest_hex_from_sorted_record_ids(record_ids: list[str]) -> str:
-    """Return ``posting_digest_hex`` for an already sorted posting list.
-
-    This is an implementation cache boundary only: callers must provide the
-    same lexicographic order produced by ``posting_digest_hex``.  The encoded
-    bytes, digest, ordered leaf, and signed checkpoint therefore remain
-    byte-for-byte identical to the protocol definition.
-    """
+    """Digest for an already sorted posting list (same encoding as posting_digest_hex)."""
     return sha256_hex(canonical_json_bytes([str(x) for x in record_ids]))
 
 
@@ -311,14 +305,14 @@ def _build_paths(leaf_hashes: list[str]) -> tuple[str, dict[int, list[MerkleSibl
 
     paths: dict[int, list[MerkleSibling]] = {i: [] for i in range(len(leaf_hashes))}
 
-                                                            
+
     level: list[tuple[str, list[int]]] = [
         (h, [i]) for i, h in enumerate(leaf_hashes)
     ]
 
     while len(level) > 1:
         if len(level) % 2 == 1:
-                                                           
+
             last_hash, last_indices = level[-1]
             level.append((last_hash, list(last_indices)))
 
@@ -456,7 +450,7 @@ def build_ordered_merkle_snapshot(
             digest_hex = EMPTY_POSTING_DIGEST_HEX
         else:
             raw = strip_real_token_id(token_id)
-                                                                             
+
             record_ids = token_to_record_ids.get(raw)
             if record_ids is None:
                 record_ids = token_to_record_ids.get(token_id, [])
@@ -608,7 +602,7 @@ def self_test() -> None:
     )
     assert ok, msg
 
-                                           
+
     ok, msg = verify_non_membership_proof(
         root_hex=snapshot.root_hex,
         query_token_id="bbb",

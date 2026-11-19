@@ -1,5 +1,5 @@
 """
-IdxCap_u: offline index capability bundled in Cap_u.
+IdxCap_u: offline index capability included in Cap_u.
 
 Clients derive epoch-specific search tokens locally from IdxCap_u.
 """

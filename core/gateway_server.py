@@ -94,7 +94,7 @@ def _cloud_http_client() -> requests.Session:
     return session
 
 
-                                          
+
 def _camshield_extract_status(result):
     if isinstance(result, tuple):
         for x in result[:2]:
@@ -162,9 +162,9 @@ def camshield_requests_post_with_retries(*args, **kwargs):
 
 
 
-                                 
-                                  
-                                 
+
+
+
 
 CLIENT_PROFILES = {
     "owner": {
@@ -366,19 +366,19 @@ def to_jsonable(obj: Any) -> Any:
     if isinstance(obj, (list, tuple, set)):
         return [to_jsonable(v) for v in obj]
 
-                 
+
     if hasattr(obj, "model_dump"):
         return to_jsonable(obj.model_dump(mode="python"))
 
-                 
+
     if hasattr(obj, "dict"):
         return to_jsonable(obj.dict())
 
-                                
+
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
 
-                                                                         
+
     return str(obj)
 
 
@@ -647,15 +647,15 @@ def create_app(
         "ingest_phase_ms_samples": {},
         "last_cloud_error": None,
 
-                                        
-                                              
-                                                                             
-                                                                           
-                                                                   
+
+
+
+
+
         "live_fast_path_sessions": {},
         "live_fast_path_cameras": {},
 
-                                         
+
         "token_to_record_ids": {},
         "token_to_record_ids_by_epoch": {},
         "ordered_checkpoint_version": 0,
@@ -663,7 +663,7 @@ def create_app(
         "last_checkpoint_chain_by_epoch": {},
         "final_epoch_checkpoints": {},
 
-                               
+
         "revoked_clients": set(),
         "client_leases": {},
         "accepted_segments": {},
@@ -750,7 +750,7 @@ def create_app(
         with ingest_order_waiters_lock:
             return sum(ingest_order_waiters.values())
 
-                                                  
+
     load_or_init_gateway_state(gateway, state, gateway_state_path)
     persistence_mode = os.environ.get(
         "CAMSHIELD_GATEWAY_PERSISTENCE_MODE", "legacy-files"
@@ -982,7 +982,7 @@ def create_app(
             )
             compact_gateway_journal(gateway, state, gateway_state_path)
         _notify_camera_order_waiters(cid)
-        
+
         print(
             f"[ENROLL] cid={cid}, expected_seq={enrolled_expected_seq}, "
             f"resumed={resumed}"
@@ -1594,9 +1594,9 @@ def create_app(
         client_id = obj.get("client_id", "owner")
         camera_id = obj.get("camera_id", obj.get("cid", None))
 
-                                   
-                                                                         
-                                                                       
+
+
+
         if client_id in state.get("revoked_clients", set()):
             return jsonify({
                 "ok": False,
@@ -1944,10 +1944,10 @@ def create_app(
                 f"seq={segment.seq} bytes={len(segment.raw_payload)}",
             )
 
-                                                                    
-                                                                    
-                                                                             
-                                                                 
+
+
+
+
             seq = int(getattr(segment, "seq", 0))
 
             if seq <= 10:
@@ -1972,14 +1972,14 @@ def create_app(
                     "case:caseB",
                 ]
 
-                                                            
-                                                                         
-                                                                       
+
+
+
             scale_prefix = os.environ.get("CAMSHIELD_SCALE_TAG_PREFIX", "")
             if scale_prefix:
-                                                                            
-                                                                              
-                                                                             
+
+
+
                 bounds_raw = os.environ.get(
                     "CAMSHIELD_SCALE_TAG_BOUNDS",
                     "5,10,20,40,60",
@@ -1989,39 +1989,39 @@ def create_app(
                     if seq <= bound:
                         dynamic_tags.append(f"{scale_prefix}{bound}")
 
-                                                  
-                                                                            
-                                                                     
+
+
+
             qtype_prefix = os.environ.get("CAMSHIELD_QUERY_TAG_PREFIX", "")
             if qtype_prefix:
-                                              
+
                 if seq <= 50:
                     dynamic_tags.append(f"scale:{qtype_prefix}single")
 
-                                    
-                                                              
-                                                       
+
+
+
                 if seq <= 100:
                     dynamic_tags.append(f"scale:{qtype_prefix}and_a")
                 if seq <= 50:
                     dynamic_tags.append(f"scale:{qtype_prefix}and_b")
 
-                                    
-                                                                
-                                                    
+
+
+
                 if seq <= 25:
                     dynamic_tags.append(f"scale:{qtype_prefix}or_a")
                 if 26 <= seq <= 50:
                     dynamic_tags.append(f"scale:{qtype_prefix}or_b")
 
-                                              
-                                                                    
+
+
                 if seq <= 100:
                     dynamic_tags.append(f"case:{qtype_prefix}case")
 
-                                                                          
-                                                                           
-                                                                              
+
+
+
             requested_keywords = obj.get("extra_keywords", [])
             if not isinstance(requested_keywords, list):
                 requested_keywords = []
@@ -2367,9 +2367,9 @@ def create_app(
                 }
             ), 500
 
-    
-    
-                                                   
+
+
+
     @app.get("/bootstrap/trust")
     def camshield_bootstrap_trust():
         """
@@ -2381,7 +2381,7 @@ def create_app(
 
         camera_public_keys = dict(state.get("camera_public_keys", {}))
 
-                                                               
+
         registry = getattr(gateway, "camera_registry", None)
         cameras = getattr(registry, "cameras", {}) if registry is not None else {}
         for cid, entry in cameras.items():
@@ -2407,21 +2407,21 @@ def create_app(
             "gateway_public_key_b64": gateway_public_key_b64,
             "enrolled": sorted(state.get("enrolled", [])),
         })
-                                                 
 
 
-                                                                        
-                                    
-                          
-     
-                                                                            
-                                                                            
-     
-                                
-                                                                
-                                                                             
-                                          
-                                                                        
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     @app.post("/live/fast-path/start")
     def live_fast_path_start():
@@ -2567,17 +2567,17 @@ def create_app(
         })
 
 
-                                                                        
-                                            
-                                         
-     
-                                                                           
-                                                                       
-                     
-                                    
-                                      
-                                        
-                                                                        
+
+
+
+
+
+
+
+
+
+
+
 
     @app.post("/client/charm-bootstrap")
     def client_charm_bootstrap():
@@ -2830,9 +2830,9 @@ def create_app(
         return jsonify(resp)
 
 
-                                                                        
-                          
-                                                                        
+
+
+
 
     @app.get("/admin/revocation/state")
     def revocation_state():
@@ -3213,8 +3213,8 @@ def create_app(
                     class_id = j + 1
                     class_tag = f"AC{class_id}"
 
-                                                                          
-                                                                                  
+
+
                     class_purpose = f"{purpose}_{class_tag}"
                     access_label = f"{rec.get('a', 'access')}_{class_tag}"
 
@@ -3275,9 +3275,9 @@ def create_app(
         })
 
 
-                                                                        
-                                                                    
-                                                                        
+
+
+
 
     @app.post("/debug/charm-decrypt-record")
     def debug_charm_decrypt_record():
@@ -3304,7 +3304,7 @@ def create_app(
         if not rid_hex:
             return jsonify({"ok": False, "error": "missing rid"}), 400
 
-                                           
+
         cloud_record_url = f"{cloud_url.rstrip('/')}/record/{rid_hex}"
         rr = _requests.get(cloud_record_url, timeout=10)
         if rr.status_code != 200:
@@ -3324,8 +3324,8 @@ def create_app(
             for t in re.findall(r"\b(?:ROLE|PURPOSE|MODE|SCOPE|EPOCH|VER)_[A-Za-z0-9_:-]+\b", policy)
         )
 
-                                                                             
-                                                                    
+
+
         if client_id == "owner":
             attrs = sorted(required_attrs)
         else:

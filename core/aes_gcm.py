@@ -1,16 +1,13 @@
 """
 AES-GCM utilities for CamShield.
 
-Encryption logic:
     ci = AE.Enc_ki(mi, aadi)
 
 where:
     ki   = KDF(EKe, ridi || e)
     aadi = (ridi, cid, sidi, seqi, ti, e, γi)
 
-Important:
-- This file no longer generates a per-record random CEK.
-- ABE/ABKEM encapsulates the epoch key EKe, not a per-record CEK.
+ABE/ABKEM encapsulates EKe; AES-GCM encrypts the segment under ki.
 """
 
 from __future__ import annotations

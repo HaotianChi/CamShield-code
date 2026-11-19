@@ -125,14 +125,14 @@ class Gateway:
         self._epoch_capsule_cache: dict[tuple[int, str, bytes], bytes] = {}
         self.last_process_phase_ms: dict[str, float | bool] = {}
 
-                                                                           
-                               
+
+
         if self.abe is not None and (self.mpk is None or self.msk is None):
             self._try_abe_setup()
 
-                                                                        
-                 
-                                                                        
+
+
+
 
     @property
     def public_key(self):
@@ -142,9 +142,9 @@ class Gateway:
     def public_key_bytes(self) -> bytes:
         return public_key_bytes(self.pkG)
 
-                                                                        
-                                
-                                                                        
+
+
+
 
     def _try_abe_setup(self) -> None:
         """
@@ -162,7 +162,7 @@ class Gateway:
                 self.mpk, self.msk = result
                 return
 
-                                                             
+
         if hasattr(self.abe, "mpk") and self.mpk is None:
             self.mpk = getattr(self.abe, "mpk")
         if hasattr(self.abe, "msk") and self.msk is None:
@@ -178,14 +178,14 @@ class Gateway:
         For MockCPABE, this returns the attribute list directly.
         """
         if self.abe is None:
-                                                        
+
             return {"attributes": attributes}
 
         if hasattr(self.abe, "keygen"):
-                           
-                                  
-                                       
-                             
+
+
+
+
             try:
                 return self.abe.keygen(self.msk, attributes)
             except TypeError:
@@ -201,28 +201,24 @@ class Gateway:
             except TypeError:
                 pass
 
-                            
+
         return {"attributes": attributes}
 
     def _abe_encrypt_epoch_key(self, policy: str, EKe: bytes) -> bytes:
         """
         Encapsulate epoch data key EKe.
 
-        Protocol:
             κa,e = ABE.Enc(PKABE, EKe, πa,e)
-
-        Important:
-            We encapsulate EKe, not per-record CEK.
         """
         if self.abe is None:
-                                                                                
+
             return b"MOCK_ABE_CAPSULE|" + policy.encode("utf-8") + b"|" + EKe
 
         if hasattr(self.abe, "encrypt"):
-                           
-                                             
-                                        
-                                        
+
+
+
+
             try:
                 return self.abe.encrypt(self.mpk, policy, EKe)
             except TypeError:
@@ -250,17 +246,16 @@ class Gateway:
         capsule = self._abe_encrypt_epoch_key(policy=policy, EKe=EKe)
         self._epoch_capsule_cache[cache_key] = capsule
 
-        # Epoch rotation invalidates old cache entries. Keep one previous epoch
-        # for in-flight work without allowing this implementation cache to grow.
+        # Keep at most the current and previous epoch capsules.
         minimum_epoch = int(epoch) - 1
         for key in list(self._epoch_capsule_cache):
             if key[0] < minimum_epoch:
                 self._epoch_capsule_cache.pop(key, None)
         return capsule, False
 
-                                                                        
-                       
-                                                                        
+
+
+
 
     def enroll_camera(
         self,
@@ -269,11 +264,7 @@ class Gateway:
         initial_gamma: bytes | None = None,
         expected_seq: int = 1,
     ) -> None:
-        """
-        Register camera public key pkC at Gateway.
-
-        This replaces old Authority camera registry.
-        """
+        """Register camera public key pkC at the Gateway."""
         self.camera_registry.enroll_camera(
             cid=cid,
             public_key=camera_public_key,
@@ -281,9 +272,9 @@ class Gateway:
             expected_seq=expected_seq,
         )
 
-                                                                        
-                                                
-                                                                        
+
+
+
 
     def issue_client_bootstrap(
         self,
@@ -431,9 +422,9 @@ class Gateway:
         kidx_e = self.epoch_manager.index_key(e)
         return hmac_index.make_index_tokens(kidx_e, keywords, camera_id=camera_id)
 
-                                                                        
-                        
-                                                                        
+
+
+
 
     def process_segment(
         self,
@@ -483,7 +474,7 @@ class Gateway:
         )
         build_ms = (time.perf_counter() - build_started) * 1000.0
 
-                                                                              
+
         self.camera_registry.update_after_verified_segment(
             cid=segment.cid,
             seq=segment.seq,
@@ -516,7 +507,7 @@ class Gateway:
 
         entry = self.camera_registry.get(segment.cid)
 
-                                         
+
         if segment.seq != entry.expected_seq:
             raise ValueError(
                 f"Unexpected sequence number for {segment.cid}: "
@@ -552,14 +543,14 @@ class Gateway:
         phase_ms: dict[str, float | bool] = {}
         e = self.epoch_manager.current_epoch()
 
-                                       
+
         rid = self.epoch_manager.record_id(segment.cid, segment.sid, e)
 
-                     
+
         EKe = self.epoch_manager.epoch_key(e)
         ki = self.epoch_manager.record_key(rid, e)
 
-                                                   
+
         aad = aes_gcm.build_associated_data(
             rid=rid,
             cid=segment.cid,
@@ -570,7 +561,7 @@ class Gateway:
             gamma=segment.gamma,
         )
 
-                                  
+
         aes_started = time.perf_counter()
         gcm = aes_gcm.encrypt(
             key=ki,
@@ -579,7 +570,7 @@ class Gateway:
         )
         phase_ms["aes_gcm_ms"] = (time.perf_counter() - aes_started) * 1000.0
 
-                                                           
+
         policy = build_abe_policy(
             role=role,
             purpose=purpose,
@@ -587,7 +578,7 @@ class Gateway:
             scope=scope,
         )
 
-                                          
+
         abe_started = time.perf_counter()
         kappa, capsule_cache_hit = self._epoch_capsule(
             epoch=e,
@@ -618,7 +609,7 @@ class Gateway:
                 time.perf_counter() - index_started
             ) * 1000.0
 
-                       
+
         policy_digest = sha256(policy.encode("utf-8"))
         capsule_digest = sha256(kappa)
 

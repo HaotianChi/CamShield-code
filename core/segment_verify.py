@@ -31,9 +31,9 @@ from core.models import (
 )
 
 
-                                                                             
-                                
-                                                                             
+
+
+
 
 def verify_segment_descriptor(
     descriptor: SegmentDescriptor,
@@ -101,8 +101,8 @@ def verify_camera_signed_segment(
     )
 
 
-                            
-                                            
+
+
 def verify_camera_segment(
     segment: CameraSignedSegment,
     camera_pk: Any,
@@ -115,9 +115,9 @@ def verify_camera_segment(
     )
 
 
-                                                                             
-                                        
-                                                                             
+
+
+
 
 def verify_record_camera_binding(
     record: EncryptedEvidenceRecord,
@@ -261,9 +261,9 @@ def verify_decrypted_plaintext(
     return True, "ok"
 
 
-                                                                             
-                                            
-                                                                             
+
+
+
 
 def verify_camera_chain_sequence(
     descriptors: list[SegmentDescriptor],

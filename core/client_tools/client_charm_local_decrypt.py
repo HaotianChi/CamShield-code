@@ -17,7 +17,7 @@ from core.epoch import derive_record_key
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-                                                                                
+
 GATEWAY_CORE_EXACT = Path(__file__).resolve().parent / "gateway_core_exact"
 if GATEWAY_CORE_EXACT.exists():
     sys.path.insert(0, str(GATEWAY_CORE_EXACT))
@@ -176,7 +176,7 @@ class LocalCharmClient:
         if isinstance(c2, str):
             text = c2.strip()
 
-                             
+
             try:
                 obj = json.loads(text)
                 if isinstance(obj, dict):
@@ -186,7 +186,7 @@ class LocalCharmClient:
             except Exception:
                 pass
 
-                                           
+
             try:
                 obj = ast.literal_eval(text)
                 if isinstance(obj, dict):
@@ -200,14 +200,10 @@ class LocalCharmClient:
 
     def _decrypt_legacy_charm_c2(self, key_elem, c2) -> bytes | None:
         """
-        Decrypt Charm ciphertexts produced by gateway-side HybridABEnc
-        (charm-crypto-framework 0.63 layout):
+        Decrypt HybridABEnc ciphertext layout:
 
             c1 = CPabe_BSW07.encrypt(pk, key, policy)
             c2 = AES-GCM_encrypt(sha256(key)[:32], EKe)
-
-        Client-side recovery:
-
             key = CPabe_BSW07.decrypt(mpk, sk_u, c1)
             EKe = AES-GCM_decrypt(sha256(key)[:32], c2)
         """
@@ -242,7 +238,7 @@ class LocalCharmClient:
             except Exception:
                 return None
 
-                                                                          
+
         key = kraw[:32]
 
         try:
@@ -264,7 +260,7 @@ class LocalCharmClient:
         try:
             ct = bytesToObject(kappa, group)
 
-                                                                               
+
             try:
                 recovered = hybrid.decrypt(self.mpk, self.sk_u, ct)
                 if recovered is not None and recovered is not False:
@@ -281,7 +277,7 @@ class LocalCharmClient:
             except Exception:
                 pass
 
-                                                                   
+
             if isinstance(ct, dict) and "c1" in ct and "c2" in ct:
                 key_elem = cpabe.decrypt(self.mpk, self.sk_u, ct["c1"])
                 if key_elem is False or key_elem is None:

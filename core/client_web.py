@@ -1066,7 +1066,7 @@ def render_page(defaults: dict[str, Any], result: dict[str, Any] | None, statuse
 
         body += '<div class="result-layout">'
 
-                    
+
         body += '<div class="card summary-card"><h2>Summary</h2>'
         body += f'<div class="kv"><b>Mode:</b> {esc(result.get("workflow_mode", "retrieval"))}</div>'
         if result.get("source_mode"):
@@ -1307,7 +1307,7 @@ def export_playback_video(
         mp4 = run_dir / "playback.mp4"
         ffmpeg = ffmpeg_exe()
 
-                                                
+
         cmd1 = [
             ffmpeg,
             "-y",
@@ -1327,7 +1327,7 @@ def export_playback_video(
             timeout=180,
         )
 
-                                                       
+
         if proc.returncode != 0 or not mp4.exists() or mp4.stat().st_size == 0:
             cmd2 = [
                 ffmpeg,
@@ -1762,7 +1762,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
             "error": "",
         }
 
-                                   
+
         cap_u, cap_u_source, cap_setup_resp = load_or_fetch_cap_u(
             gateway_url,
             client_id,
@@ -1785,7 +1785,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         result["token_data"] = token_data
         result["token_ok"] = bool(token_data.get("ok"))
 
-                          
+
         search_data: dict[str, Any] = {}
         if result["token_ok"]:
             search_payload = {
@@ -1800,7 +1800,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         else:
             result["search_data"] = {"ok": False, "skipped": "gateway token failed"}
 
-                                          
+
         retrieval_report = {"ok": False, "checks": [], "result_record_ids": []}
         if result["search_ok"]:
             try:
@@ -1815,7 +1815,7 @@ def create_app(default_gateway_url: str, default_cloud_url: str, default_camera_
         rids = [str(x) for x in retrieval_report.get("result_record_ids", [])]
         result["result_count"] = len(rids)
 
-                                                                 
+
         fetched_records: list[dict[str, Any]] = []
         fetch_report: list[dict[str, Any]] = []
         json_path = run_dir / "fetched_records.json"

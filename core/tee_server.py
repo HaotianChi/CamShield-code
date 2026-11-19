@@ -1,4 +1,4 @@
-               
+
 """
 Software-isolated TEE server for CamShield camera node.
 
@@ -140,11 +140,9 @@ def create_app(camera_id: str, state_path: Path | None = None) -> Flask:
     @app.post("/reset")
     def reset():
         """
-        Reset camera-side hash-chain state for a fresh camera session.
+        Reset camera-side hash-chain state for a new session.
 
-        Gateway enrollment resets expected_seq to 1. For the same new run,
-        the remote software TEE must also reset gamma_prev to gamma_0.
-        This keeps the camera-side chain state aligned with Gateway state.
+        Aligns gamma_prev with Gateway enrollment (expected_seq starts at 1).
         """
         obj = request.get_json(force=True, silent=True) or {}
         cid = obj.get("camera_id") or obj.get("cid") or camera_id
@@ -162,7 +160,7 @@ def create_app(camera_id: str, state_path: Path | None = None) -> Flask:
             tee._next_seq = 1
             _save_tee_state(tee, resolved_state_path)
 
-                                                                              
+
         metrics["attest_count"] = 0
         metrics["total_attest_ms"] = 0.0
         metrics["last_attest_ms"] = 0.0

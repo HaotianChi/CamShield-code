@@ -764,8 +764,8 @@ def _deserialize_simple(v: Any):
         if t == "dict":
             out = {}
             for k, x in v.get("items", {}).items():
-                                                            
-                                                                                  
+
+
                 if isinstance(k, str) and k.isdigit():
                     kk = int(k)
                 else:

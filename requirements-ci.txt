@@ -1,4 +1,4 @@
-# CI dependencies (MockCPABE path; Charm-Crypto not required).
+# CI dependencies (MockCPABE; Charm-Crypto not required).
 flask
 requests
 cryptography

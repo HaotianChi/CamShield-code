@@ -24,9 +24,9 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
-                                                                             
-                
-                                                                             
+
+
+
 
 class CPABEBase(ABC):
     @abstractmethod
@@ -46,23 +46,16 @@ class CPABEBase(ABC):
         ...
 
 
-                                                                             
-                             
-                                                                             
+
+
+
 
 class MockCPABE(CPABEBase):
     """
-    Mock CP-ABE backend.
+    Policy-checking mock CP-ABE backend for environments without Charm-Crypto.
 
-    This is NOT cryptographically secure.
-
-    It is used only to test CamShield protocol flow:
-        policy -> capsule κa,e -> recover EKe if user attributes satisfy policy.
-
-    Supported policy style:
-        (ROLE_OWNER and PURPOSE_SURVEILLANCE and MODE_READ and SCOPE_cam01)
-
-    A user can decrypt if all extracted attributes are contained in SKu.
+    Not suitable for production confidentiality. A user recovers EKe when
+    attributes in SKu satisfy the policy string.
     """
 
     def setup(self) -> tuple[Any, Any]:
@@ -134,9 +127,9 @@ class MockCPABE(CPABEBase):
         return {cls._normalize_attr(t) for t in tokens}
 
 
-                                                                             
-                 
-                                                                             
+
+
+
 
 def get_cpabe(use_charm: bool = False) -> CPABEBase:
     """

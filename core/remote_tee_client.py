@@ -1,4 +1,4 @@
-                           
+
 """
 Remote TEE client for CameraMain.
 

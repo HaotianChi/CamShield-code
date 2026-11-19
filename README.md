@@ -80,4 +80,20 @@ See `requirements.txt` (Flask, requests, cryptography, imageio-ffmpeg, charm-cry
 
 ## CI
 
-GitHub Actions runs compile checks and smoke tests (`python run.py --no-charm`) on push and pull requests to `main`. CI installs `requirements-ci.txt` (without Charm-Crypto).
+GitHub Actions runs compile checks and basic tests (`python run.py --no-charm`) on push and pull requests to `main`. CI installs `requirements-ci.txt` (without Charm-Crypto).
+
+## Citation
+
+If you find this work useful, we would appreciate a citation:
+
+```bibtex
+@article{Chi2027CamShield,
+  title   = {CamShield: Bridging privacy protection and evidence readiness in cloud-assisted surveillance},
+  author  = {Chi, Haotian and Li, Yunwei and Zhao, Chunli and Geng, Haijun and Zhang, Rong and Wang, Yuwei},
+  journal = {Computer Standards \& Interfaces},
+  volume  = {100},
+  pages   = {104211},
+  year    = {2027},
+  doi     = {10.1016/j.csi.2026.104211}
+}
+```

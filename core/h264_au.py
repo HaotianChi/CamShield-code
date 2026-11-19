@@ -29,7 +29,7 @@ from typing import Iterable
 START_CODE_3 = b"\x00\x00\x01"
 START_CODE_4 = b"\x00\x00\x00\x01"
 
-                      
+
 NAL_TYPE_NON_IDR = 1
 NAL_TYPE_IDR = 5
 NAL_TYPE_SEI = 6
@@ -57,7 +57,7 @@ def _find_start_code(buf: bytes | bytearray, start: int = 0) -> tuple[int, int] 
     if not candidates:
         return None
 
-                                                                   
+
     candidates.sort(key=lambda x: (x[0], -x[1]))
     return candidates[0]
 
@@ -110,7 +110,7 @@ class AnnexBNALUStream:
 
         first = _find_start_code(self.buffer, 0)
         if first is None:
-                                                                             
+
             if len(self.buffer) > 8:
                 del self.buffer[:-8]
             return out
@@ -128,7 +128,7 @@ class AnnexBNALUStream:
             cur_idx, cur_len = cur
             nxt = _find_start_code(self.buffer, cur_idx + cur_len)
             if nxt is None:
-                                                   
+
                 if cur_idx > 0:
                     del self.buffer[:cur_idx]
                 break

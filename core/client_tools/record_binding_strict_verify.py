@@ -46,7 +46,7 @@ def decode_bytes(value):
         return bytes(value)
 
     if isinstance(value, str):
-                        
+
         try:
             if len(value) % 2 == 0:
                 b = bytes.fromhex(value)
@@ -55,7 +55,7 @@ def decode_bytes(value):
         except Exception:
             pass
 
-                     
+
         try:
             b = base64.b64decode(value, validate=True)
             if b:
@@ -63,10 +63,10 @@ def decode_bytes(value):
         except Exception:
             pass
 
-                          
+
         return value.encode()
 
-                                                  
+
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 

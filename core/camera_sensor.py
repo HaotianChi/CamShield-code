@@ -1,19 +1,10 @@
-                     
 """
 AU-aware sensors for CamShield.
 
-This replaces SimulatedSensor with real encoded media input.
+1. FileH264AUSensor — offline H.264 file input (sample.h264)
+2. FFmpegH264LiveSensor — live capture via ffmpeg (e.g. USB camera)
 
-Two modes:
-1. FileH264AUSensor:
-   - offline VM test
-   - input: sample.h264
-   - output: m_i = grouped AU bytes
-
-2. FFmpegH264LiveSensor:
-   - real camera / live test
-   - input: USB camera through ffmpeg
-   - output: m_i = grouped AU bytes
+Both emit m_i as grouped AU bytes.
 """
 
 from __future__ import annotations
@@ -68,7 +59,7 @@ class FileH264AUSensor:
     def capture_segment(self, request: SensorCaptureRequest) -> SensorSegmentData:
         sid = request.sid or f"{request.camera_id}_seg_{request.seq:06d}"
 
-                                                 
+
         if request.raw_payload is not None:
             payload = request.raw_payload
         else:

@@ -1,4 +1,4 @@
-                   
+
 """
 Camera node for CamShield AU deployment.
 
@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-id", default="cam01")
     parser.add_argument("--max-segments", type=int, default=10)
 
-                 
+
     parser.add_argument("--file", default=None, help="Use offline .h264 file instead of live ffmpeg")
     parser.add_argument("--testsrc", action="store_true", help="Use ffmpeg testsrc instead of USB camera")
     parser.add_argument("--device", default="/dev/video0")
@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
         help="Use macOS AVFoundation video device index, e.g. 1 for '-i 1:none'",
     )
 
-                  
+
     parser.add_argument("--fps", type=int, default=DEFAULT_CAPTURE_FPS)
     parser.add_argument("--size", default="640x360")
     parser.add_argument("--bitrate", default="500k")
@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
         help="Pace segment generation by wall-clock time so that each segment lasts approximately aus_per_segment / fps seconds.",
     )
 
-              
+
     parser.add_argument("--keyword", action="append", default=None)
     parser.add_argument("--scope", default=None)
     parser.add_argument("--timing-csv", default=None, help="Write per-segment ingest timing CSV")
@@ -214,12 +214,10 @@ def _validate_resume_alignment(
 
 def reset_remote_tee_state(tee_url: str, camera_id: str) -> None:
     """
-    Start a fresh camera session.
+    Reset remote TEE hash-chain state for a new camera session.
 
-    Gateway enrollment below resets expected_seq to 1. The remote software TEE
-    must also reset its camera-side hash-chain state to gamma_0; otherwise the
-    first segment of the new run is signed from the previous run's gamma_last
-    and Gateway rejects it as a hash-chain continuity failure.
+    Gateway enrollment starts expected_seq at 1; the TEE must reset gamma_prev
+    to gamma_0 so the first segment verifies against Gateway chain state.
     """
     base = tee_url.rstrip("/")
     payload = {
