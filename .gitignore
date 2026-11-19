@@ -90,3 +90,4 @@ charm_src/
 # Generated figures and documents elsewhere
 *.png
 *.pdf
+!CamShield_Bridging privacy protection and evidence readiness in cloud-assisted surveillance.pdf
